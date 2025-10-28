@@ -1,0 +1,1082 @@
+  const loader = document.getElementById('loader');
+  let currentAssignmentId = null; 
+  
+  const PAGE_SIZE = 30;
+  let currentFilters = {};
+  let currentOffset = 0;
+  let totalCustomerCount = 0;
+
+  const channel = new BroadcastChannel('customer_channel');
+
+  function showLoader() { 
+    loader.classList.remove('hidden'); 
+    document.querySelectorAll('button, input, select, textarea').forEach(el => {
+      if (el.closest('.modal-content') || el.closest('.error-modal-content')) return; 
+      el.disabled = true;
+    });
+  }
+
+  // [신규] 10번 제안: XSS 방지를 위한 HTML 이스케이프 함수
+  function escapeHtml(text) {
+    if (text === null || text === undefined) return '';
+    const str = String(text);
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
+  function hideLoader() { 
+    loader.classList.add('hidden'); 
+  	document.querySelectorAll('button, input, select, textarea').forEach(el => {
+  	  el.disabled = false;
+  	});
+  }
+
+  /**
+ * [Issue #5 적용]
+ * 개선된 오류 모달. 메시지와 함께 '동작(action)' 버튼을 받을 수 있습니다.
+ * @param {string} message - 모달에 표시할 메시지
+ * @param {Array<Object>} [actions] - (선택) 버튼 객체의 배열.
+ * (예: [{ text: '새로고침', action: () => { ... }, isPrimary: true }])
+ */
+function showErrorModal(message, actions) {
+  const existingErrorModal = document.querySelector('.error-modal-overlay');
+  if (existingErrorModal) existingErrorModal.remove();
+
+  const modal = document.createElement('div');
+  modal.className = 'modal-overlay error-modal-overlay';
+  modal.style.zIndex = '100003';
+
+  // 모달 내용 (p 태그는 textContent로 삽입하여 XSS 방지)
+  const contentDiv = document.createElement('div');
+  contentDiv.className = 'error-modal-content';
+  contentDiv.innerHTML = `<h3>⚠️ 오류 발생</h3>`;
+  
+  const messageP = document.createElement('p');
+  messageP.textContent = message; // textContent로 XSS 자동 방지
+  messageP.style.margin = '20px 0';
+  messageP.style.fontSize = '1.1rem';
+  contentDiv.appendChild(messageP);
+
+  // 버튼 영역
+  const actionsDiv = document.createElement('div');
+  actionsDiv.className = 'modal-actions';
+  actionsDiv.style.justifyContent = 'flex-end';
+  actionsDiv.style.gap = '10px'; // 버튼 사이 간격
+
+  // 1. actions 배열이 없거나 비어있으면 '확인' 버튼만 추가
+  if (!actions || actions.length === 0) {
+    const okButton = document.createElement('button');
+    okButton.className = 'error-modal-btn'; // (빨간색)
+    okButton.textContent = '확인';
+    okButton.onclick = () => modal.remove();
+    actionsDiv.appendChild(okButton);
+  } else {
+    // 2. actions 배열이 있으면, 정의된 버튼들 추가
+    actions.forEach(action => {
+      const button = document.createElement('button');
+      button.textContent = action.text;
+      
+      if (action.isPrimary) {
+        button.className = 'error-modal-btn'; // (빨간색)
+      } else {
+        // 'secondary' 클래스는 CSS에 정의되어 있어야 합니다.
+        // (만약 없다면 'error-modal-btn'의 회색 버전으로 스타일링 필요)
+        button.className = 'secondary'; 
+      }
+      
+      button.onclick = () => {
+        if (action.action) {
+          action.action(); // 정의된 동작 실행
+        }
+        modal.remove(); // 모달 닫기
+      };
+      actionsDiv.appendChild(button);
+    });
+  }
+
+  contentDiv.appendChild(actionsDiv);
+  modal.appendChild(contentDiv);
+  document.body.appendChild(modal);
+}
+
+  /**
+ * [Issue #5 적용]
+ * 서버 오류를 유형별로 분석하여, 개선된 showErrorModal을 통해
+ * 사용자에게 구체적인 메시지와 행동을 안내합니다.
+ */
+function handleFailure(error) {
+  hideLoader();
+  console.error("Apps Script Error:", error);
+  
+  const msg = error.message;
+  let userMessage = `오류 발생: ${msg}`; // 기본 메시지
+  let actions = []; // 기본 '확인' 버튼
+
+  if (msg.includes("찾을 수 없습니다")) {
+    // (1) 데이터 없음 (다른 사용자가 삭제 등)
+    userMessage = "요청하신 데이터를 찾을 수 없습니다. 목록을 새로고침합니다.";
+    actions = [
+      { text: '새로고침', action: () => window.location.reload(), isPrimary: true }
+    ];
+
+  } else if (msg.includes("권한")) {
+    // (2) 권한 없음
+    userMessage = "이 작업을 수행할 권한이 없습니다. (예: 본인 고객이 아닙니다.)";
+    // actions = [] (기본 '확인' 버튼)
+
+  } else if (msg.includes("시스템이") && msg.includes("혼잡합니다")) {
+    // (3) 시스템 혼잡 (LockService 충돌)
+    userMessage = "시스템이 현재 매우 혼잡합니다. (다른 사용자가 동시 저장 중) 잠시 후 다시 시도해주세요.";
+    // actions = [] (기본 '확인' 버튼)
+
+  } else if (msg.includes("상담 기록이 너무 깁니다")) {
+    // (4) 커스텀 오류 (8000자 초과)
+    userMessage = msg; // 서버의 친절한 오류 메시지 그대로 사용
+    // actions = [] (기본 '확인' 버튼)
+
+  } else if (msg.includes("timeout") || msg.includes("시간") || msg.includes("NetworkError")) {
+    // (5) 네트워크/타임아웃
+    userMessage = "서버 응답 시간이 초과되었거나 네트워크 연결에 문제가 있습니다. 인터넷 연결을 확인 후 다시 시도해주세요.";
+    // actions = [] (기본 '확인' 버튼)
+
+  } else {
+    // (6) 그 외 모든 서버 스크립트 오류
+    userMessage = "알 수 없는 서버 오류가 발생했습니다. 페이지를 새로고침하여 시스템을 재시작하는 것이 좋습니다.";
+    actions = [
+      { text: '취소', action: null, isPrimary: false }, // 'secondary' 버튼
+      { text: '새로고침', action: () => window.location.reload(), isPrimary: true }
+    ];
+  }
+  
+  showErrorModal(userMessage, actions);
+}
+ 
+  function formatPhoneNumber_Client(phone) {
+  	if (!phone) return "";
+  	const digits = phone.replace(/\D/g, "");
+  	if (digits.length === 11) return `${digits.substring(0, 3)}-${digits.substring(3, 7)}-${digits.substring(7)}`;
+  	if (digits.length === 10) return `${digits.substring(0, 3)}-${digits.substring(3, 6)}-${digits.substring(6)}`;
+  	return phone;
+  }
+
+  // [JavaScript.html] - 기존 populateDbTypeDropdowns 함수를 아래 코드로 **교체**합니다.
+
+/**
+ * [수정] 서버에서 받은 설정(config) 객체를 사용하여
+ * 모든 정적 <select> 드롭다운 메뉴의 옵션을 채웁니다.
+ * @param {object} config - getConfigurations()가 반환하는 설정 객체
+ */
+function populateSelectOptions(config) {
+  const optionsMap = config.selectOptions; // 서버에서 전달된 옵션 객체
+  if (!optionsMap) {
+    console.error("Select options not found in config object.");
+    return;
+  }
+
+  // Helper function to populate a single select element
+  const populate = (elementId, optionsArray) => {
+    const selectElement = document.getElementById(elementId);
+    if (selectElement) {
+      // 기존 옵션 유지 여부 결정 (예: '-- 선택 --' 옵션)
+      const firstOption = selectElement.options[0]?.value === "" ? selectElement.options[0] : null;
+      selectElement.innerHTML = ''; // 기존 옵션 제거
+      if (firstOption) {
+        selectElement.appendChild(firstOption); // '-- 선택 --' 다시 추가
+      }
+
+      optionsArray.forEach(optionValue => {
+        const option = document.createElement('option');
+        option.value = optionValue;
+        option.textContent = optionValue;
+        selectElement.appendChild(option);
+      });
+    }
+  };
+
+  // --- 각 select 요소에 옵션 채우기 ---
+  // 필터 패널
+  populate('filterDbType', config.dbTypes || []); // DB 유형은 config 루트에 있음
+
+  // 신규 고객 모달
+  populate('newDbType', config.dbTypes || []);
+
+  // 상세 정보 패널
+  populate('leadSource', optionsMap.leadSource || []);
+  populate('ageGroup', optionsMap.ageGroup || []);
+  populate('addressCity', optionsMap.addressCities || []); // 시/도 목록 채우기
+  populate('incomeType', optionsMap.incomeType || []);
+  populate('creditInfo', optionsMap.creditInfo || []);
+  populate('carUsage', optionsMap.carUsage || []);
+  populate('expectedContractTiming', optionsMap.expectedContractTiming || []);
+  populate('desiredContractTerm', optionsMap.desiredContractTerm || []);
+  populate('desiredInitialCostType', optionsMap.desiredInitialCostType || []);
+  populate('maintenanceServiceLevel', optionsMap.maintenanceServiceLevel || []);
+  populate('customerStatus', optionsMap.customerStatus || []);
+
+  // 기존 항목 (customerType, gender, isRepurchase 등)의 옵션도
+  // 필요하다면 optionsMap에 추가하고 여기서 populate 호출 가능
+}
+
+  function getStatusClass(consultStatus, contractStatus) {
+  	if (contractStatus === '계약 체결') return 'contracted';
+  	if (contractStatus === '계약 무산') return 'failed';
+  	if (consultStatus === '상담 완료') return 'completed';
+  	if (consultStatus === '상담 진행 중' || consultStatus === '연락 시도 중') return 'consulting';
+  	return '';
+  }
+
+  function buildCustomerLi(customer) {
+      const li = document.createElement('li');
+      li.tabIndex = 0;
+      li.dataset.assignmentId = customer.assignmentId;
+      
+      const assignDate = (customer.assignmentDate && typeof customer.assignmentDate === 'string') ? customer.assignmentDate.split('T')[0] : '날짜 없음';
+      const phone = customer.customerPhoneNumber ? formatPhoneNumber_Client(customer.customerPhoneNumber) : '번호 없음';
+      
+      let lastLogText = '상담 기록 없음';
+      if (customer.lastLogDate) {
+  	try {
+  	  const logDate = new Date(customer.lastLogDate);
+  	  if (!isNaN(logDate.getTime())) {
+  	    lastLogText = "최종: " + logDate.toLocaleString('ko-KR', {
+  	      month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit'
+  	    });
+  	  } else {
+  	    lastLogText = '최종: (날짜 오류)';
+  	  }
+  	} catch (e) {
+  	  lastLogText = '최종: (날짜 변환 오류)';
+  	}
+      }
+
+      const consult = customer.consultationStatus || '미정';
+      const contract = customer.contractStatus || '미정';
+      const statusClass = getStatusClass(consult, contract);
+      
+      li.innerHTML = `
+  	<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+  	  <strong style="font-size: 1.15em; color: #004085;">${escapeHtml(customer.customerName)}</strong>
+  	  <span class="status-badge ${statusClass}">${contract !== '미해당' ? contract : consult}</span>
+  	</div>
+  	<div style="font-size: 0.95em; color: #333; margin-bottom: 8px;">
+  	  <span>${phone}</span>
+  	  <span style="float: right; font-size: 0.9em; color: #555;">(인입: ${assignDate} / ${customer.dbType || '기타'})</span>
+  	</div>
+  	<div class="list-item-status" style="border-top: 1px solid #eee; padding-top: 8px; font-size: 0.9em; color: #0056b3; font-weight: bold;">
+  	  ${lastLogText}
+  	</div>
+      `;
+      return li;
+  }
+
+  function displayAssignedCustomers(customers, isNewSearch) {
+    const ul = document.getElementById('assignedCustomersList');
+  	if (!ul) return; 
+
+  	const loadMoreBtn = document.getElementById('loadMoreBtn');
+  	
+  	if (isNewSearch) {
+  	  ul.innerHTML = '';
+  	}
+  	
+  	const loadingLi = ul.querySelector('.skeleton-li'); 
+  	if (loadingLi) {
+  	  ul.innerHTML = ''; 
+  	}
+
+  	if (customers.length === 0 && isNewSearch) {
+  	  ul.innerHTML = '<li>조건에 맞는 고객이 없습니다.</li>';
+  	} else {
+  	  customers.forEach(customer => {
+  	  	const li = buildCustomerLi(customer);
+  	  	ul.appendChild(li);
+  	  });
+  	}
+
+  	const currentLoadedCount = ul.querySelectorAll('li[data-assignment-id]').length;
+  	if (currentLoadedCount < totalCustomerCount) {
+  	  loadMoreBtn.classList.remove('hidden');
+  	} else {
+  	  loadMoreBtn.classList.add('hidden');
+  	}
+  	loadMoreBtn.disabled = false;
+  }
+
+function updateListItem(assignment) {
+  try {
+    const liToUpdate = document.querySelector(`#assignedCustomersList li[data-assignment-id="${assignment.assignmentId}"]`);
+  	if (!liToUpdate) return;
+  	
+  	const newLi = buildCustomerLi(assignment);
+  	liToUpdate.innerHTML = newLi.innerHTML;
+  	
+  	liToUpdate.classList.remove('flash-success');
+  	void liToUpdate.offsetWidth; 
+  	liToUpdate.classList.add('flash-success');
+  	
+  } catch (e) {
+  	console.error("Failed to update list item:", e);
+  }
+}
+
+// [JavaScript.html] - renderConsultationLogs_Dynamic 함수를 아래 코드로 교체합니다.
+
+function renderConsultationLogs_Dynamic(logs, rootElement) {
+  const logsDiv = rootElement.querySelector('#consultationLogs');
+  logsDiv.innerHTML = (!logs || logs.length === 0) ? '<p>기록 없음</p>' : '';
+  if (!logs) return;
+
+  // (기존 코드에 이미 정렬 로직이 있습니다)
+  logs.sort((a, b) => new Date(b.logTimestamp) - new Date(a.logTimestamp));
+  
+  logs.forEach(log => {
+    // ✨ [Issue #10 적용] XSS 방지를 위해 innerHTML 대신 DOM 요소와 textContent 사용
+    
+    const logEntryDiv = document.createElement('div');
+    logEntryDiv.className = 'log-entry';
+
+    // 1. 날짜 (Strong)
+    const dateStrong = document.createElement('strong');
+    dateStrong.textContent = log.logTimestamp ? 
+      new Date(log.logTimestamp).toLocaleString('ko-KR') : '날짜 없음'; // ko-KR 추가
+
+    // 2. 상담 내용 (Div)
+    const contentDiv = document.createElement('div');
+    contentDiv.textContent = log.logContent || ''; // textContent는 자동 이스케이프
+    contentDiv.style.whiteSpace = 'pre-wrap'; // CSS로 줄바꿈(\n)을 <br>처럼 처리
+
+    // 3. DOM에 추가
+    logEntryDiv.appendChild(dateStrong);
+    logEntryDiv.appendChild(document.createElement('br'));
+    logEntryDiv.appendChild(contentDiv);
+    
+    logsDiv.appendChild(logEntryDiv);
+  });
+}
+
+function showSaveFeedback(buttonElement) {
+  const originalText = buttonElement.textContent;
+  buttonElement.textContent = "✅ 저장 완료";
+  buttonElement.disabled = true;
+  setTimeout(() => {
+    buttonElement.textContent = originalText;
+  	buttonElement.disabled = false;
+  }, 2000);
+}
+
+function handleSavePhoneNumber(panelElement, assignmentId, saveBtn) {
+  if (!assignmentId) return;
+  const phoneInput = panelElement.querySelector('#detailCustomerPhoneNumber');
+  phoneInput.value = formatPhoneNumber_Client(phoneInput.value);
+  
+  showLoader();
+  google.script.run
+    .withSuccessHandler(result => {
+  	  hideLoader();
+  	  displayAssignmentDetails_Dynamic(result, panelElement); 
+  	  showSaveFeedback(saveBtn); 
+  	  channel.postMessage({ updatedAssignment: result.assignment });
+  	  
+        updateListItem(result.assignment);
+  	})
+  	.withFailureHandler(handleFailure)
+  	.saveCustomerDetails(assignmentId, { customerPhoneNumber: phoneInput.value });
+}
+
+// [JavaScript.html] - handleSaveCustomerDetails 함수를 아래 코드로 **교체**합니다.
+
+function handleSaveCustomerDetails(panelElement, assignmentId, saveBtn) {
+  if (!assignmentId) return;
+
+  // 모든 필드의 ID 목록 (Code.gs의 EDITABLE_FIELDS와 유사하게 관리)
+  // 주의: 서버의 saveCustomerDetails 함수 내 EDITABLE_FIELDS 배열과 일치해야 함
+  const detailFields = [
+    // 기본 정보
+    'leadSource', 'customerType', 'gender', 'ageGroup', 'addressCity', 'addressDistrict',
+    'incomeType', 'creditInfo',
+    // 고객 니즈
+    'interestedCarModel', 'comparisonCarModel', 'ownedCarModel', 'carUsage', 'driverScope',
+    // 희망 계약 조건
+    'expectedContractTiming', 'desiredContractTerm', 'desiredInitialCostType',
+    'maintenanceServiceLevel', 'salesCondition', 'isRepurchase', 'paymentMethod',
+    // 상담/관리 상태
+    'customerStatus', 'consultationStatus', 'contractStatus'
+    // 연락처는 별도 버튼으로 처리하므로 제외
+    // 계약 관련 필드(contractDate 등)는 saveContractDetails에서 처리하므로 제외
+  ];
+
+  const details = {};
+  detailFields.forEach(fieldId => {
+    const element = panelElement.querySelector('#' + fieldId);
+    if (element) {
+        // value 속성이 있는 요소(input, select, textarea)만 처리
+        if (element.hasOwnProperty('value')) {
+             details[fieldId] = element.value.trim();
+        }
+    }
+  });
+
+  // 숫자 필드는 변환 (필요한 경우)
+  // 예: details.deposit = details.deposit ? parseFloat(details.deposit) : null;
+
+  console.log("Saving details:", details); // 전송될 데이터 확인 (디버깅용)
+
+  showLoader();
+  google.script.run
+    .withSuccessHandler(result => {
+      hideLoader();
+      // ✨ 중요: 저장 후에는 전체 데이터를 다시 표시하여 최신 상태 반영
+      // (나중에 렌더링 최적화 시 이 부분을 updateAssignmentDetails_Partial로 변경)
+      displayAssignmentDetails_Dynamic(result, panelElement);
+      showSaveFeedback(saveBtn);
+      channel.postMessage({ updatedAssignment: result.assignment });
+      updateListItem(result.assignment); // 목록 아이템 업데이트
+    })
+    .withFailureHandler(handleFailure)
+    .saveCustomerDetails(assignmentId, details); // 서버 함수 호출
+}
+
+function handleSaveContractDetails(panelElement, assignmentId, saveBtn) {
+  if (!assignmentId) return;
+  const contractDetails = {};
+  const fields = ['contractDate', 'contractSummary', 'contractAmount', 'contractFileInfo', 'contractReview'];
+  fields.forEach(field => { contractDetails[field] = panelElement.querySelector('#' + field).value.trim(); });
+  contractDetails.contractAmount = contractDetails.contractAmount ? parseFloat(contractDetails.contractAmount) : null;
+
+  showLoader();
+  google.script.run
+    .withSuccessHandler(result => {
+  	  hideLoader();
+  	  displayAssignmentDetails_Dynamic(result, panelElement); 
+  	  showSaveFeedback(saveBtn); 
+  	  channel.postMessage({ updatedAssignment: result.assignment });
+
+        updateListItem(result.assignment);
+  	})
+  	.withFailureHandler(handleFailure)
+  	.saveContractDetails(assignmentId, contractDetails);
+}
+
+function handleAddLog(panelElement, assignmentId) {
+  if (!assignmentId) return;
+  const contentEl = panelElement.querySelector('#newLogContent');
+  const content = contentEl.value.trim();
+  if (!content) {
+  	showErrorModal("기록 내용을 입력해주세요.");
+  	return;
+  }
+  
+  showLoader();
+  google.script.run
+    .withSuccessHandler(result => { 
+  	  hideLoader();
+  	  renderConsultationLogs_Dynamic(result.logs, panelElement); 
+  	  contentEl.value = ''; 
+  	  channel.postMessage({ updatedAssignment: result.assignment });
+
+        updateListItem(result.assignment);
+  	})
+  	.withFailureHandler(handleFailure)
+  	.addConsultationLog(assignmentId, content);
+}
+
+function attachDetailPanelListeners() {
+  const panelElement = document.getElementById('customerDetailPanel');
+  if (!panelElement) {
+    return;
+  }
+
+  panelElement.addEventListener('click', e => {
+    const target = e.target;
+  	const targetId = target.id;
+  	
+  	const assignmentId = currentAssignmentId; 
+
+  	if (!assignmentId && (targetId === 'savePhoneNumberBtn' || targetId === 'saveCustomerDetailsBtn' || targetId === 'saveContractBtn' || targetId === 'addLogBtn')) {
+  	  console.error("No currentAssignmentId set for save/add action.");
+  	  return;
+  	}
+
+  	switch (targetId) {
+  	  case 'backToListBtn':
+  	  	e.preventDefault();
+  	  	panelElement.classList.add('hidden'); 
+  	  	
+  	  	const listPanel = document.getElementById('listPanel');
+  	  	if (listPanel) listPanel.classList.remove('hidden');
+
+  	  	const currentActive = document.querySelector('#assignedCustomersList li.active');
+  	  	if (currentActive) currentActive.classList.remove('active');
+  	  	currentAssignmentId = null; 
+  	  	break;
+  	  	
+  	  case 'savePhoneNumberBtn':
+  	  	handleSavePhoneNumber(panelElement, assignmentId, target);
+  	  	break;
+  	  
+  	  case 'saveCustomerDetailsBtn':
+  	  	handleSaveCustomerDetails(panelElement, assignmentId, target);
+  	  	break;
+  	  
+  	  case 'saveContractBtn':
+  	  	handleSaveContractDetails(panelElement, assignmentId, target);
+  	  	break;
+
+  	  case 'addLogBtn':
+  	  	handleAddLog(panelElement, assignmentId);
+  	  	break;
+  	}
+  });
+
+  const contractStatusSelect = panelElement.querySelector('#contractStatus');
+  if (contractStatusSelect) {
+    contractStatusSelect.addEventListener('change', e => {
+    	panelElement.querySelector('#contractInfoSection').classList.toggle('hidden', e.target.value !== '계약 체결');
+    });
+  }
+}
+
+  function selectCustomer(assignmentId) {
+    showLoader();
+
+  	google.script.run
+  	  .withSuccessHandler(result => {
+  	  	console.log("서버에서 받은 응답:", result); 
+  	  	
+  	  	document.getElementById('listPanel').classList.add('hidden');
+  	  	
+  	  	const panelElement = document.getElementById('customerDetailPanel');
+  	  	displayAssignmentDetails_Dynamic(result, panelElement); 
+  	  	panelElement.classList.remove('hidden'); 
+
+  	  	document.querySelectorAll('#assignedCustomersList li').forEach(item => {
+  	  	  item.classList.toggle('active', item.dataset.assignmentId === assignmentId);
+  	  	});
+  	  	hideLoader();
+  	  })
+  	  .withFailureHandler(handleFailure)
+  	  .getAssignmentDetails(assignmentId);
+  }
+
+  function fetchCustomers(isNewSearch = false) {
+  	if (!document.getElementById('loadMoreBtn')) return;
+
+  	if (isNewSearch) {
+  	  currentOffset = 0; 
+  	  document.getElementById('loadMoreBtn').classList.add('hidden'); 
+  	  showSkeletonLoader(); 
+  	  currentFilters = {
+  	  searchTerm: document.getElementById('filterSearchTerm').value,
+  	  dateFrom: document.getElementById('filterAssignmentDateFrom').value,
+  	  dateTo: document.getElementById('filterAssignmentDateTo').value,
+  	  consultStatus: document.getElementById('filterConsultationStatus').value,
+  	  contractStatus: document.getElementById('filterContractStatus').value,
+  	  dbType: document.getElementById('filterDbType').value
+  	  };
+  	} else {
+  	  currentOffset += PAGE_SIZE;
+  	  document.getElementById('loadMoreBtn').disabled = true; 
+  	}
+
+  	const filtersToSend = {
+  	  ...currentFilters,
+  	  limit: PAGE_SIZE,
+  	  offset: currentOffset 
+  	};
+
+  	if (!isNewSearch) {
+  	  showLoader();
+  	}
+  	
+  	google.script.run
+  	  .withSuccessHandler(result => {
+  	  	if (isNewSearch) {
+  	  	} else {
+  	  	  hideLoader();
+  	  	}
+        
+  	  	totalCustomerCount = result.totalCount; 
+  	  	displayAssignedCustomers(result.customers, isNewSearch);
+  	  })
+  	  .withFailureHandler(error => {
+  	  	handleFailure(error);
+  	  	if (isNewSearch) {
+  	  	  document.getElementById('assignedCustomersList').innerHTML = '<li>오류가 발생했습니다. 필터를 다시 적용해주세요.</li>';
+  	  	}
+  	  	if (!isNewSearch) document.getElementById('loadMoreBtn').disabled = false;
+  	  })
+  	  .getAssignedCustomers(filtersToSend);
+  }
+  
+  function showSkeletonLoader() {
+    const ul = document.getElementById('assignedCustomersList');
+  	if (!ul) return; 
+  	ul.innerHTML = ''; 
+  	for (let i = 0; i < 5; i++) { 
+  	  const li = document.createElement('li');
+  	  li.className = 'skeleton-li';
+  	  li.innerHTML = `
+  	  	<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+  	  	  <div class="skeleton-item line-1"></div>
+  	  	  <div class="skeleton-item" style="height: 20px; width: 60px;"></div>
+  	  	</div>
+  	  	<div class="skeleton-item line-2"></div>
+  	  	<div class="skeleton-item line-3"></div>
+  	  `;
+  	  ul.appendChild(li);
+  	}
+  }
+
+document.addEventListener('DOMContentLoaded', () => {
+
+  const currentView = document.body.dataset.view;
+  const isDualMode = document.body.dataset.isDualMode === 'true'; 
+
+  // ▼▼▼ [신규] 서버로부터 /exec URL 읽기 ▼▼▼
+  const SCRIPT_URL = document.body.dataset.scriptUrl; 
+  // ▲▲▲ [신규] ▲▲▲
+
+  attachDetailPanelListeners();
+
+  document.addEventListener('keydown', (e) => {
+  	if (e.key === 'Escape') {
+  	  const dynamicPanel = document.getElementById('customerDetailPanel');
+  	  if (dynamicPanel && !dynamicPanel.classList.contains('hidden')) { 
+  	    dynamicPanel.querySelector('#backToListBtn').click();
+  	  }
+  	}
+  	
+  	if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+  	  e.preventDefault();
+  	  const searchBox = document.getElementById('filterSearchTerm');
+  	  if (searchBox) searchBox.focus(); 
+  	}
+  });
+  
+  window.addEventListener('offline', () => {
+  	showErrorModal("인터넷 연결이 끊어졌습니다. 변경 사항이 저장되지 않을 수 있습니다.");
+  });
+
+  // -----------------------------------
+  // [분기 1] 목록 뷰 (List View) 로직
+  // -----------------------------------
+  if (currentView === 'list') {
+    
+    // ▼▼▼▼▼▼ [신규] 듀얼 모드 전환 버튼 로직 ▼▼▼▼▼▼
+    const dualModeBtn = document.getElementById('switchToDualModeBtn');
+    if (isDualMode) {
+    const singleModeBtn = document.createElement('button');
+    singleModeBtn.textContent = '🔄 단일 모드로';
+    singleModeBtn.className = 'secondary'; // 스타일 적용
+    singleModeBtn.style.marginLeft = '10px'; // 간격 조절
+    singleModeBtn.addEventListener('click', () => {
+      const SCRIPT_URL = document.body.dataset.scriptUrl;
+      window.top.location.href = `${SCRIPT_URL}?view=list`; // 단일 목록 뷰로 이동
+    });
+
+    // 적절한 위치에 버튼 추가 (예: list-header 안)
+    const headerActions = document.querySelector('.list-header .add-action-panel');
+    if (headerActions) {
+      headerActions.prepend(singleModeBtn); // 다른 버튼들 앞에 추가
+    }
+    // 상세 뷰에도 유사하게 추가할 수 있습니다.
+  } else {
+      dualModeBtn.addEventListener('click', () => {
+        // const baseUrl = window.location.href.split('?')[0]; // [삭제]
+        
+        // 1. 새 창에 'detail' 뷰 띄우기
+        const detailUrl = `${SCRIPT_URL}?view=detail`; // [수정]
+        window.open(detailUrl, '_blank', 'noopener,noreferrer');
+
+        // 2. 현재 창은 'list' 뷰 + 'dual=true' 파라미터로 새로고침
+        const listUrl = `${SCRIPT_URL}?view=list&dual=true`; // [수정]
+        
+        // [수정] setTimeout으로 약간의 지연 후 새로고침 시도
+        setTimeout(() => {
+          try {
+            window.top.location.href = listUrl; 
+          } catch (e) {
+            // 만약 window.top 접근이 막혀있다면, 현재 iframe만이라도 새로고침 시도
+            console.error("Failed to redirect top window, trying current window:", e);
+            window.location.href = listUrl; 
+          }
+        }, 100); // 0.1초 지연
+      });
+    }
+    // ▲▲▲ [수정] 듀얼 모드 전환 버튼 로직 끝 ▲▲▲
+
+    const listUl = document.getElementById('assignedCustomersList');
+    const filterBtn = document.getElementById('applyFilterBtn');
+  	const resetBtn = document.getElementById('resetFilterBtn');
+  	const loadMoreBtn = document.getElementById('loadMoreBtn');
+  	const addCustomerModal = document.getElementById('addCustomerModal');
+  	const addCustomerBtn = document.getElementById('openAddCustomerModalBtn');
+  	const cancelAddBtn = document.getElementById('cancelAddCustomerBtn');
+  	const saveNewBtn = document.getElementById('saveNewCustomerBtn');
+  	const newNameInput = document.getElementById('newCustomerName');
+  	const newPhoneInput = document.getElementById('newCustomerPhoneNumber');
+
+  	listUl.addEventListener('click', e => {
+  	  const li = e.target.closest('li');
+  	  if (li && li.dataset.assignmentId) {
+  	  	const assignmentId = li.dataset.assignmentId;
+  	  	
+  	  	if (isDualMode) {
+  	  	  channel.postMessage({ customerId: assignmentId });
+  	  	} else {
+  	  	  selectCustomer(assignmentId);
+  	  	}
+
+  	  	document.querySelectorAll('#assignedCustomersList li').forEach(item => {
+  	  	  item.classList.toggle('active', item.dataset.assignmentId === assignmentId);
+  	  	});
+  	  }
+  	});
+  	
+  	listUl.addEventListener('keydown', e => {
+  	  if (e.key === 'Enter' || e.key === ' ') {
+  	  const li = e.target.closest('li');
+  	  if (li && li.dataset.assignmentId) {
+  	    e.preventDefault();
+          const assignmentId = li.dataset.assignmentId;
+  	  	  
+          if (isDualMode) {
+            channel.postMessage({ customerId: assignmentId });
+          } else {
+            selectCustomer(assignmentId);
+          }
+
+  	  	document.querySelectorAll('#assignedCustomersList li').forEach(item => {
+  	  	  item.classList.toggle('active', item.dataset.assignmentId === assignmentId);
+  	  	});
+  	  }
+  	  }
+  	});
+
+  	channel.addEventListener('message', (event) => {
+  	  const assignment = event.data.updatedAssignment;
+  	  if (assignment) {
+  	  	console.log('List view received update for:', assignment.assignmentId);
+  	  	updateListItem(assignment); 
+  	  }
+  	});
+
+  	// --- 필터, 더보기, 신규 고객 추가 리스너 (변경 없음) ---
+  	filterBtn.addEventListener('click', () => fetchCustomers(true));
+
+  	resetBtn.addEventListener('click', () => {
+  	  document.getElementById('filterSearchTerm').value = '';
+  	  document.getElementById('filterDbType').value = '';
+  	  document.getElementById('filterConsultationStatus').value = '';
+  	  document.getElementById('filterContractStatus').value = '';
+  	  const dateFromInput = document.getElementById('filterAssignmentDateFrom');
+  	  const today = new Date();
+  	  dateFromInput.value = new Date(today.setMonth(today.getMonth() - 3)).toISOString().split('T')[0];
+  	  document.getElementById('filterAssignmentDateTo').value = '';
+  	  fetchCustomers(true); 
+  	});
+  	
+  	loadMoreBtn.addEventListener('click', () => fetchCustomers(false));
+
+  	newPhoneInput.addEventListener('blur', (event) => {
+  	  event.target.value = formatPhoneNumber_Client(event.target.value);
+  	});
+  	addCustomerBtn.addEventListener('click', () => addCustomerModal.classList.remove('hidden'));
+  	cancelAddBtn.addEventListener('click', () => {
+  	  addCustomerModal.classList.add('hidden');
+  	  newNameInput.value = ''; newPhoneInput.value = '';
+  	});
+
+  	saveNewBtn.addEventListener('click', () => {
+  	  const name = newNameInput.value.trim();
+  	  const phone = newPhoneInput.value.trim();
+  	  if (!name) { showErrorModal("고객명은 필수입니다."); return; }
+  	  if (phone) {
+  	  const digits = phone.replace(/\D/g, '');
+  	  if (digits.length > 0 && (digits.length < 9 || digits.length > 11)) {
+  	    showErrorModal("올바른 전화번호 형식이 아닙니다. (9~11자리 숫자)"); return;
+  	  }
+  	  }
+  	  showLoader();
+  	  google.script.run
+  	  .withSuccessHandler(newCustomer => {
+  	  	  hideLoader();
+  	  	  const ul = document.getElementById('assignedCustomersList');
+  	  	  const li = buildCustomerLi(newCustomer); 
+  	  	  ul.prepend(li); 
+  	  	  const noCustomerLi = ul.querySelector('li:first-child:not([data-assignment-id])');
+  	  	  if (noCustomerLi && ul.children.length > 1) { 
+  	  	  	noCustomerLi.remove();
+  	  	  }
+  	  	  addCustomerModal.classList.add('hidden');
+  	  	  newNameInput.value = '';
+  	  	  newPhoneInput.value = '';
+  	  })
+  	  .withFailureHandler(handleFailure)
+  	  .addNewCustomer({
+  	  	customerName: name,
+  	  	customerPhoneNumber: phone,
+  	  	dbType: document.getElementById('newDbType').value
+  	  });
+  	});
+
+  	// --- 'list' 뷰 초기 로드 (변경 없음) ---
+  	const dateFromInput = document.getElementById('filterAssignmentDateFrom');
+  	const today = new Date();
+  	dateFromInput.value = new Date(new Date().setMonth(today.getMonth() - 3)).toISOString().split('T')[0];
+    // ▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼
+    // [!!!] 바로 여기입니다! (파일에서는 약 768행 근처)
+    showSkeletonLoader(); 
+
+    // [!!!] 이 아래 줄을 추가해야 합니다.
+    console.log("🚀 [Client] Calling getConfigurations..."); // <-- 로그 추가
+
+    google.script.run
+      .withSuccessHandler(config => {
+        console.log("✅ getConfigurations SUCCESS (List View):", config); 
+        populateSelectOptions(config); // (이 부분은 이미 수정하셨습니다)
+        fetchCustomers(true); 
+      })
+      .withFailureHandler(error => {
+        handleFailure(error);
+        document.getElementById('assignedCustomersList').innerHTML = '<li>시스템 설정(Config) 로드에 실패했습니다.</li>';
+      })
+      .getConfigurations();
+    //▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+
+  // -------------------------------------
+  // [분기 2] 상세 뷰 (Detail View) 로직
+  // -------------------------------------
+  } else if (currentView === 'detail') {
+  	
+  	const listPanel = document.getElementById('listPanel');
+  	if (listPanel) listPanel.remove();
+  	
+  	const addCustomerModal = document.getElementById('addCustomerModal');
+  	if (addCustomerModal) addCustomerModal.remove();
+  	
+  	const backBtn = document.getElementById('backToListBtn');
+  	if (backBtn) backBtn.remove();
+  	
+  	const container = document.querySelector('.container');
+  	let detailPlaceholder = document.createElement('div');
+  	detailPlaceholder.id = 'detailPlaceholder';
+  	detailPlaceholder.className = 'detail-panel'; 
+  	detailPlaceholder.style.padding = '20px';
+  	detailPlaceholder.innerHTML = '<h2>고객 상세 정보</h2><p style="font-size: 1.1rem; color: #555; margin-top: 20px;">왼쪽 모니터의 목록 창에서 고객을 선택하세요...</p>';
+  	container.appendChild(detailPlaceholder);
+
+  	channel.addEventListener('message', (event) => {
+  	  const assignmentId = event.data.customerId;
+  	  if (assignmentId) {
+  	  	console.log('Detail view received customerId:', assignmentId);
+  	  	
+  	  	showLoader();
+  	  	google.script.run
+  	  	  .withSuccessHandler(result => {
+  	  	  	  const placeholder = document.getElementById('detailPlaceholder');
+  	  	  	  if (placeholder) placeholder.remove();
+
+  	  	  	  const panelElement = document.getElementById('customerDetailPanel');
+  	  	  	  displayAssignmentDetails_Dynamic(result, panelElement); 
+  	  	  	  panelElement.classList.remove('hidden'); 
+
+  	  	  	  hideLoader();
+  	  	  })
+  	  	  .withFailureHandler(handleFailure)
+  	  	  .getAssignmentDetails(assignmentId);
+  	  }
+  	});
+
+    if (!detailPlaceholder) {
+      document.getElementById('customerDetailPanel').classList.remove('hidden');
+    }
+  }
+  // 주소(시/도) 변경 시 시/군/구 로드 리스너 부착
+  attachAddressListeners();
+});
+
+
+
+/**
+ * 서버에서 특정 시/도에 해당하는 시/군/구 목록을 가져와 드롭다운을 채웁니다.
+ * @param {string} selectedCity - 선택된 시/도 이름
+ * @param {string} [valueToSelect] - (선택) 로드 후 자동으로 선택할 시/군/구 값
+ */
+function loadDistricts(selectedCity, valueToSelect) {
+  const districtSelect = document.getElementById('addressDistrict');
+  if (!districtSelect) return;
+
+  // 시/도가 선택되지 않았으면 시/군/구 목록 비우기
+  if (!selectedCity) {
+    districtSelect.innerHTML = '<option value="">-- 시/도를 먼저 선택 --</option>';
+    districtSelect.disabled = true;
+    return;
+  }
+
+  districtSelect.disabled = true; // 로딩 중 비활성화
+  districtSelect.innerHTML = '<option value="">로딩 중...</option>';
+
+  google.script.run
+    .withSuccessHandler(districts => {
+      districtSelect.innerHTML = '<option value="">-- 선택 --</option>'; // 기본 옵션
+      if (districts && districts.length > 0) {
+        districts.forEach(district => {
+          const option = document.createElement('option');
+          option.value = district;
+          option.textContent = district;
+          districtSelect.appendChild(option);
+        });
+        // 만약 자동으로 선택해야 할 값이 있다면 설정
+        if (valueToSelect) {
+          districtSelect.value = valueToSelect;
+        }
+      } else {
+         districtSelect.innerHTML = '<option value="">-- 시/군/구 정보 없음 --</option>';
+      }
+      districtSelect.disabled = false; // 로딩 완료 후 활성화
+    })
+    .withFailureHandler(error => {
+      console.error("Failed to load districts:", error);
+      districtSelect.innerHTML = '<option value="">-- 로드 실패 --</option>';
+      districtSelect.disabled = false;
+      // 사용자에게 오류 알림 (선택 사항)
+      // showErrorModal("시/군/구 목록을 불러오는 데 실패했습니다.");
+    })
+    .getDistrictsForCity(selectedCity);
+}
+
+/**
+ * 주소(시/도) select 요소에 change 이벤트 리스너를 추가합니다.
+ */
+function attachAddressListeners() {
+    const citySelect = document.getElementById('addressCity');
+    if (citySelect) {
+        citySelect.addEventListener('change', (event) => {
+            const selectedCity = event.target.value;
+            loadDistricts(selectedCity); // 시/군/구 목록 로드 함수 호출
+        });
+    }
+}
+
+/**
+ * [수정됨] 서버에서 받은 상세 데이터를 상세 정보 패널의 각 UI 요소에 표시합니다.
+ * @param {object} result - 서버의 getAssignmentDetails 함수가 반환하는 객체 { assignment: {}, logs: [] }
+ * @param {HTMLElement} panelElement - 상세 정보 패널 요소 (customerDetailPanel)
+ */
+function displayAssignmentDetails_Dynamic(result, panelElement) {
+  if (!panelElement || !result || !result.assignment) {
+    console.error("Invalid data or panel element for displayAssignmentDetails_Dynamic.");
+    showErrorModal("상세 정보를 표시할 수 없습니다. (데이터 오류)");
+    return;
+  }
+
+  const assignment = result.assignment;
+  currentAssignmentId = assignment.assignmentId; // 현재 보고 있는 고객 ID 업데이트
+
+  console.log("Displaying details for:", assignment.assignmentId, assignment); // 디버깅 로그
+
+  // --- Helper 함수: ID로 요소 찾고 값 설정 (오류 방지 포함) ---
+  const setElementValue = (id, value) => {
+    const element = panelElement.querySelector('#' + id);
+    if (element) {
+      // 날짜 입력 필드는 YYYY-MM-DD 형식으로 설정
+      if (element.type === 'date' && value && typeof value === 'string') {
+        try {
+          // ISO 문자열 (YYYY-MM-DDTHH:mm:ss.sssZ) 에서 날짜 부분만 추출
+          element.value = value.split('T')[0];
+        } catch (e) {
+          console.warn(`Failed to parse date for element #${id}:`, value, e);
+          element.value = ''; // 파싱 실패 시 비움
+        }
+      } else if (element.tagName === 'SPAN') {
+        element.textContent = value !== null && value !== undefined ? value : ''; // SPAN 태그 처리
+      } else {
+        element.value = value !== null && value !== undefined ? value : '';
+      }
+    } else {
+      // console.warn(`Element with ID #${id} not found in detail panel.`); // 요소를 못찾는 경우 경고 (선택 사항)
+    }
+  };
+
+  // --- 1. 기본 정보 ---
+  setElementValue('detailAssignmentId', assignment.assignmentId);
+  setElementValue('detailCustomerNameSpan', assignment.customerName); // SPAN 요소
+  setElementValue('detailCustomerPhoneNumber', assignment.customerPhoneNumber ? formatPhoneNumber_Client(assignment.customerPhoneNumber) : ''); // 전화번호 형식 적용
+  setElementValue('detailDbType', assignment.dbType); // SPAN 요소
+
+  setElementValue('leadSource', assignment.leadSource);
+  setElementValue('customerType', assignment.customerType);
+  setElementValue('gender', assignment.gender);
+  setElementValue('ageGroup', assignment.ageGroup);
+  
+  // 주소 처리: 시/도 설정 후, 시/군/구 로드 및 설정
+  setElementValue('addressCity', assignment.addressCity);
+  if (assignment.addressCity) {
+    // 시/도가 있으면, 시/군/구 목록 로드 함수 호출 (로드 완료 후 값 선택하도록)
+    loadDistricts(assignment.addressCity, assignment.addressDistrict); 
+  } else {
+    // 시/도가 없으면, 시/군/구 목록 비우기
+    loadDistricts(''); 
+  }
+  
+  setElementValue('incomeType', assignment.incomeType);
+  setElementValue('creditInfo', assignment.creditInfo);
+
+  // --- 2. 고객 니즈 ---
+  setElementValue('interestedCarModel', assignment.interestedCarModel);
+  setElementValue('comparisonCarModel', assignment.comparisonCarModel);
+  setElementValue('ownedCarModel', assignment.ownedCarModel);
+  setElementValue('carUsage', assignment.carUsage);
+  setElementValue('driverScope', assignment.driverScope);
+
+  // --- 3. 희망 계약 조건 ---
+  setElementValue('expectedContractTiming', assignment.expectedContractTiming);
+  setElementValue('desiredContractTerm', assignment.desiredContractTerm);
+  setElementValue('desiredInitialCostType', assignment.desiredInitialCostType);
+  setElementValue('maintenanceServiceLevel', assignment.maintenanceServiceLevel);
+  setElementValue('salesCondition', assignment.salesCondition);
+  setElementValue('isRepurchase', assignment.isRepurchase);
+  setElementValue('paymentMethod', assignment.paymentMethod);
+
+  // --- 4. 상담 / 계약 상태 ---
+  setElementValue('customerStatus', assignment.customerStatus);
+  setElementValue('consultationStatus', assignment.consultationStatus);
+  setElementValue('contractStatus', assignment.contractStatus);
+
+  // 계약 상태에 따라 계약 정보 섹션 표시/숨김 처리
+  const contractSection = panelElement.querySelector('#contractInfoSection');
+  if (contractSection) {
+    contractSection.classList.toggle('hidden', assignment.contractStatus !== '계약 체결');
+  }
+
+  // --- 5. 계약 상세 정보 (계약 상태가 '계약 체결'일 때만) ---
+  if (assignment.contractStatus === '계약 체결') {
+    setElementValue('contractDate', assignment.contractDate);
+    setElementValue('contractAmount', assignment.contractAmount);
+    setElementValue('contractSummary', assignment.contractSummary);
+    setElementValue('contractFileInfo', assignment.contractFileInfo);
+    setElementValue('contractReview', assignment.contractReview);
+  } else {
+     // 계약 상태가 아니면 계약 정보 필드 비우기 (선택 사항)
+     const contractFields = ['contractDate', 'contractAmount', 'contractSummary', 'contractFileInfo', 'contractReview'];
+     contractFields.forEach(id => setElementValue(id, ''));
+  }
+
+  // --- 6. 상담 기록 렌더링 ---
+  renderConsultationLogs_Dynamic(result.logs, panelElement);
+
+  // --- 7. 새 상담 기록 입력 필드 초기화 ---
+  const newLogContentEl = panelElement.querySelector('#newLogContent');
+  if (newLogContentEl) {
+    newLogContentEl.value = ''; // 항상 비워줌
+  }
+  
+  // --- 8. 고객 이름 업데이트 (패널 상단 제목) ---
+  const detailTitle = panelElement.querySelector('#detailCustomerName');
+  if (detailTitle) {
+      detailTitle.textContent = assignment.customerName ? `${assignment.customerName} 고객 상세 정보` : '고객 상세 정보';
+  }
+}
+
