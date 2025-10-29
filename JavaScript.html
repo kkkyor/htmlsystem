@@ -394,7 +394,7 @@ function handleSaveCustomerDetails(panelElement, assignmentId, saveBtn) {
   const detailFields = [
     // 기본 정보
     'leadSource', 'customerType', 'gender', 'ageGroup', 'addressCity', 'addressDistrict',
-    'incomeType', 'creditInfo',
+    'incomeType', 'creditInfo', 
     // 고객 니즈
     'interestedCarModel', 'comparisonCarModel', 'ownedCarModel', 'carUsage', 'driverScope',
     // 희망 계약 조건
@@ -410,8 +410,11 @@ function handleSaveCustomerDetails(panelElement, assignmentId, saveBtn) {
   detailFields.forEach(fieldId => {
     const element = panelElement.querySelector('#' + fieldId);
     if (element) {
-        // value 속성이 있는 요소(input, select, textarea)만 처리
-        if (element.hasOwnProperty('value')) {
+        
+        // [수정] .hasOwnProperty('value') 대신 'value' in element
+        //       (또는 element.value !== undefined) 를 사용합니다.
+        //       DOM 요소는 'value'를 프로토타입으로부터 상속받기 때문입니다.
+        if ('value' in element) {
              details[fieldId] = element.value.trim();
         }
     }
@@ -489,8 +492,7 @@ function attachDetailPanelListeners() {
 
   panelElement.addEventListener('click', e => {
     const target = e.target;
-  	const targetId = target.id;
-  	
+    const targetId = target.id;
   	const assignmentId = currentAssignmentId; 
 
   	if (!assignmentId && (targetId === 'savePhoneNumberBtn' || targetId === 'saveCustomerDetailsBtn' || targetId === 'saveContractBtn' || targetId === 'addLogBtn')) {
@@ -526,6 +528,17 @@ function attachDetailPanelListeners() {
   	  case 'addLogBtn':
   	  	handleAddLog(panelElement, assignmentId);
   	  	break;
+
+      // ▼▼▼ [신규] 그룹 토글 버튼 로직 추가 ▼▼▼
+      case 'toggleCustomerInfoBtn':
+        e.preventDefault();
+        const infoGroup = document.getElementById('customerInfoGroup');
+        if (infoGroup) {
+          const isHidden = infoGroup.classList.toggle('hidden');
+          target.textContent = isHidden ? '상세 정보 보이기' : '상세 정보 숨기기';
+        }
+        break; 
+      // ▲▲▲ [신규] 그룹 토글 버튼 로직 끝 ▲▲▲
   	}
   });
 
@@ -1005,7 +1018,9 @@ function displayAssignmentDetails_Dynamic(result, panelElement) {
   setElementValue('detailCustomerNameSpan', assignment.customerName); // SPAN 요소
   setElementValue('detailCustomerPhoneNumber', assignment.customerPhoneNumber ? formatPhoneNumber_Client(assignment.customerPhoneNumber) : ''); // 전화번호 형식 적용
   setElementValue('detailDbType', assignment.dbType); // SPAN 요소
-
+  // 수정된 코드
+  const assignDateStr = assignment.assignmentDate ? assignment.assignmentDate.split('T')[0] : '';
+  setElementValue('detailAssignmentDate', assignDateStr);
   setElementValue('leadSource', assignment.leadSource);
   setElementValue('customerType', assignment.customerType);
   setElementValue('gender', assignment.gender);
