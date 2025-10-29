@@ -912,11 +912,14 @@ function addConsultationLog(assignmentId, logContent) {
     // --- 5. [변경] 후속 작업 (Lock 외부) ---
     bustUserListCache_(); // 캐시 무효화
 
-    // Gviz 쿼리로 "시트에 이미 저장된" 로그들을 가져옵니다.
-    const existingLogs = findLogsByAssignmentId_(assignmentId);
+    // Gviz 쿼리로 "시트에 이미 저장된" 로그 + "큐에 있는" 로그를 모두 가져옵니다.
+    // [수정] existingLogs -> finalLogs로 변수명 변경 (의미 명확화)
+    const finalLogs = findLogsByAssignmentId_(assignmentId);
 
-    // [중요] 사용자의 즉각적인 UI 피드백을 위해,
-    // 방금 큐에 저장한 로그를 Gviz 반환 형식과 동일하게 만듭니다.
+    // [!!!]
+    // [제거] findLogsByAssignmentId_가 큐에 있는 새 로그를 이미 가져오므로
+    //       수동으로 newLogForClient를 만들 필요가 없습니다.
+    /*
     const newLogForClient = {
       logId: newLogId,
       assignmentId: assignmentId,
@@ -924,9 +927,10 @@ function addConsultationLog(assignmentId, logContent) {
       logContent: logContent,
       userName: userName
     };
-
-    // "시트에서 가져온 로그" 맨 앞에 "방금 쓴 로그"를 추가합니다.
-    const combinedLogs = [newLogForClient, ...existingLogs];
+    */
+    
+    // [제거] 위 객체를 목록 맨 앞에 추가하는 로직 제거
+    // const combinedLogs = [newLogForClient, ...existingLogs]; // [삭제]
 
     // 반환할 고객 데이터 조합
     if (!foundAssignmentData) {
@@ -937,27 +941,46 @@ function addConsultationLog(assignmentId, logContent) {
         throw new Error("최종 고객 데이터를 조회하는 데 실패했습니다.");
       }
     } else {
-      foundAssignmentData.lastLogDate = logTimestamp.toISOString();
+      // (이 부분은 'lastLogDate'가 즉시 UI에 반영되도록 기존 로직 유지)
+      foundAssignmentData.lastLogDate = logTimestamp.toISOString(); 
     }
 
     return {
       assignment: foundAssignmentData,
-      logs: combinedLogs // 신규 로그가 포함된 배열을 반환
+      // [수정] combinedLogs 대신 finalLogs (findLogsByAssignmentId_의 결과)를 반환
+      logs: finalLogs 
     };
   });
 }
 
-
-
-// [Code.gs] - addNewCustomer 함수를 아래 코드로 대체합니다.
+/**
+ * [중요] 아키텍처 결정 사항: 이 함수는 의도적으로 '큐(PropertiesService)'를 사용하지 않습니다.
+ * * 1. 문제 상황:
+ * 이 함수가 addConsultationLog처럼 '큐'를 사용(비동기 처리)할 경우, 
+ * 클라이언트(UI)는 즉시 응답을 받아 고객이 목록에 추가된 것처럼 보이지만,
+ * 실제 '배정고객' 시트에는 batchWriteLogs_v2 트리거가 실행될 때까지 (최대 1~5분) 데이터가 없습니다.
+ * * 2. 오류 시나리오:
+ * 사용자가 신규 고객을 등록한 직후(1~5분 이내), 해당 고객을 클릭해 상담 기록을 추가하려 하면
+ * addConsultationLog 함수는 권한/정보 확인을 위해 findRowById_를 호출합니다.
+ * 이때 시트에 고객 데이터가 아직 없으므로 "해당 배정 ID를 찾을 수 없습니다" 오류가 발생합니다.
+ *
+ * 3. 해결책 (현재 방식):
+ * '신규 고객 등록' 작업은 '상담 기록 추가'보다 빈도가 훨씬 낮습니다.
+ * 따라서 이 작업은 약간의 UI 지연(Lock 획득 및 시트 쓰기 시간 0.5~1초)을 감수하더라도,
+ * 데이터 일관성(즉시 시트에 반영됨)을 보장하는 것이 더 중요합니다.
+ * * 이에 따라 이 함수는 LockService를 사용하여 '배정고객' 시트에 직접 appendRow(동기 쓰기)를 수행합니다.
+ * * ※ '상담 기록 추가(addConsultationLog)'는 빈도가 높고 즉각적인 UI 피드백이 중요하므로 '큐'를 사용하는 것이 맞으며,
+ * 두 함수의 아키텍처는 의도적으로 다르게 설계되었습니다.
+ */
 
 function addNewCustomer(customerData) {
-  return measurePerformance_('addNewCustomer_Batch', () => {
-    // [제거] Lock을 제거하여 함수가 즉시 응답하도록 합니다.
-    // const lock = acquireLockWithRetry_(); 
+  // [수정] Lock을 다시 사용하여 시트 일관성을 보장합니다.
+  return measurePerformance_('addNewCustomer_SheetWrite', () => {
+    // [수정] 작업 이름 전달
+    const lock = acquireLockWithRetry_('addNewCustomer'); 
     
     try {
-      const timestamp = new Date(); // Date 객체로 생성
+      const timestamp = new Date(); // Date 객체
       const userEmail = Session.getActiveUser().getEmail();
       const configData = getConfigurations();
       const userName = configData.emailToNameMap[userEmail] || userEmail;
@@ -965,45 +988,60 @@ function addNewCustomer(customerData) {
       const assignmentId = "A_" + timestamp.getTime();
       const customerId = "C_" + timestamp.getTime();
 
-      // [신규] 큐(PropertiesService)에 저장할 데이터 객체
-      const dataToQueue = {
+      // [수정] 시트에 직접 쓸 데이터 객체 (클라이언트 반환용)
+      // (클라이언트 피드백을 위해 ISO 문자열 사용)
+      const newCustomerData = {
         assignmentId: assignmentId,
         customerId: customerId,
         customerName: customerData.customerName,
-        customerPhoneNumber: formatPhoneNumber(customerData.customerPhoneNumber), // 포맷 적용
+        customerPhoneNumber: formatPhoneNumber(customerData.customerPhoneNumber), // 서버 포맷
         assignedTo: userName,
         dbType: customerData.dbType,
-        assignmentDate: timestamp.toISOString(), // ISO 문자열로 저장
+        assignmentDate: timestamp.toISOString(), // 클라이언트 반환용 ISO 문자열
         consultationStatus: "배정됨",
         contractStatus: "미해당"
       };
 
-      // [신규] 큐에 저장
-      try {
-        // "log_queue_"와 구분되는 "new_cust_queue_" 키 사용
-        const queueKey = 'new_cust_queue_' + assignmentId; 
-        PropertiesService.getScriptProperties().setProperty(queueKey, JSON.stringify(dataToQueue));
-      } catch (e) {
-        Logger.log(`신규 고객 큐 저장 실패: ${e.message}`);
-        throw new Error("신규 고객을 임시 저장하는 데 실패했습니다. 잠시 후 다시 시도해주세요.");
-      }
+      // [수정] 헤더 맵을 동적으로 가져옵니다.
+      const headers = assignmentSheet.getRange(1, 1, 1, assignmentSheet.getLastColumn()).getValues()[0];
+      const headerMap = {};
+      headers.forEach((h, i) => { if(h) headerMap[h] = i; });
 
-      // [제거] assignmentSheet.appendRow(newRow);
+      const newRow = Array(headers.length).fill(null);
+      
+      // 객체 데이터를 배열 순서에 맞게 매핑
+      for (const headerKey in newCustomerData) {
+        if (headerMap[headerKey] !== undefined) {
+          let value = newCustomerData[headerKey];
+          
+          // [중요] 시트에 쓸 때는 Date 객체로 변환
+          if (headerKey === 'assignmentDate') { 
+            value = new Date(value); // ISO 문자열을 다시 Date 객체로
+          }
+          newRow[headerMap[headerKey]] = value;
+        }
+      }
+      
+      // [중요] SearchHelper 열은 ARRAYFORMULA가 채우도록 비워둡니다 (newRow[headerMap['SearchHelper']] = null).
+
+      // [수정] 시트에 직접 appendRow 실행 (Lock 내부)
+      assignmentSheet.appendRow(newRow);
+      SpreadsheetApp.flush(); // (선택 사항이지만 Lock 내부에선 권장)
+
+      // [제거] 큐(PropertiesService) 관련 로직 모두 제거
       
       bustUserListCache_(); // 캐시 무효화는 동일하게 실행
 
-      // [수정] 클라이언트에 즉시 반환할 객체
-      // 큐에 저장한 데이터와 동일한 객체를 반환하여 UI가 즉시 업데이트되도록 함
-      // (HTML/JS는 이미 Date 객체 대신 ISO 문자열을 처리하도록 되어 있음)
-      return dataToQueue; 
+      // [수정] 시트에 방금 쓴 객체를 클라이언트에 반환
+      return newCustomerData; 
 
-      // [수정]
       } catch (e) {
-        // console.error("addNewCustomer Error: " + e.toString()); // [삭제]
-        logError_('addNewCustomer', e, { customerName: customerData.customerName }); // [추가]
+        logError_('addNewCustomer', e, { customerName: customerData.customerName });
         throw new Error("고객 추가 중 오류가 발생했습니다.");
+      } finally {
+        // [수정] Lock 해제
+        if (lock) lock.releaseLock(); 
       }
-    // [제거] finally { lock.releaseLock(); }
   }); // End of measurePerformance_
 }
 
@@ -1297,6 +1335,7 @@ function batchWriteLogs_v2() {
         }
 
         // ✨ [Issue #2 적용] SearchHelper 열을 미리 소문자로 채웁니다.
+        /*
         const searchHelperColIndex = assignHeaderMap['SearchHelper'];
         if (searchHelperColIndex !== undefined) {
           const name = custData.customerName || '';
@@ -1304,7 +1343,8 @@ function batchWriteLogs_v2() {
           // (이름 + 전화번호) 소문자 조합을 SearchHelper 열에 저장
           newRow[searchHelperColIndex] = (name + phone).toLowerCase();
         }
-
+        */
+        
         customersToWrite.push(newRow);
 
       } catch (e) {
