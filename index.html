@@ -251,7 +251,33 @@
     line-height: 1.5; /* 버튼 텍스트 세로 정렬 */
     box-sizing: border-box;
   }
+  .detail-panel #assignmentDetails .details-section:first-child .form-group,
+  .detail-panel #assignmentDetails .details-section:first-child .form-group-inline {
+    max-width: 450px; /* UX상 자연스러운 최대 너비 (조절 가능) */
+  /* (style 태그 안에 추가) */
 
+  /* h3 태그 내부에 제목과 버튼을 양끝으로 배치 */
+  .details-section h3 {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  /* 토글 버튼 기본 스타일 */
+  .toggle-section-btn {
+    font-size: 0.85rem;    /* 폰트 크기 작게 */
+    padding: 3px 10px;     /* 패딩 축소 */
+    /* 'secondary' 스타일(회색)을 기본으로 사용 */
+    background-color: #6c757d;
+    min-height: auto;      /* 다른 버튼과 높이 다르게 */
+    height: auto;
+    line-height: 1.5;
+  }
+  .toggle-section-btn:hover {
+    background-color: #5a6268;
+  }
+
+}
   </style>
 </head>
 <body data-view="<?= view ?>" data-is-dual-mode="<?= isDualMode ?>" data-script-url="<?= scriptUrl ?>">
@@ -311,35 +337,37 @@
             <a href="#" id="backToListBtn" class="back-link">&larr; 목록으로 돌아가기</a>
       <h2 id="detailCustomerName">고객 상세 정보</h2>
       <div id="assignmentDetails">
-
         <div class="details-section">
-          <h3>고객 기본 정보</h3> 
-          <div class="details-grid"> 
-            <div class="info-item"> 
-              <strong>고객명:</strong> <span id="detailCustomerNameSpan"></span>
-            </div>
-            <div class="info-item">
-              <strong>배정 ID:</strong> <span id="detailAssignmentId"></span>
-            </div>
-            <div class="info-item">
-               <strong>DB 유형:</strong> <span id="detailDbType"></span>
-             </div>
-            <div class="form-group form-group-inline"> 
-              <label for="detailCustomerPhoneNumber">연락처:</label> 
-              <div class="input-button-group">
-                <input type="tel" id="detailCustomerPhoneNumber" class="info-input"> 
-                <button id="savePhoneNumberBtn">번호 저장</button>
-              </div>
-            </div>
-            <div class="form-group">
-              <label for="leadSource">유입 경로:</label>
-              <select id="leadSource"><option value="">-- 선택 --</option></select>
-            </div>
-          </div> 
-        </div> 
+        <h3>고객 기본 정보</h3> 
+        <div class="info-item"> 
+            <strong>고객명:</strong> <span id="detailCustomerNameSpan"></span> </div>
+          <div class="info-item">
+            <strong>배정 ID:</strong> <span id="detailAssignmentId"></span>
+          </div>
+          <div class="info-item">
+            <strong>DB 유형:</strong> <span id="detailDbType"></span>
+          </div>
+          <div class="info-item">
+            <strong>배정일:</strong> <span id="detailAssignmentDate"></span>
+          </div>
+          <div class="info-item"> 
+          <strong>연락처:</strong> 
+          <div class="input-button-group">
+            <input type="tel" id="detailCustomerPhoneNumber" class="info-input"> 
+            <button id="savePhoneNumberBtn">번호 저장</button>
+          </div>
+        </div>
 
+        <div class="info-item"> 
+          <strong>유입 경로:</strong> 
+          <select id="leadSource" class="info-input"> <option value="">-- 선택 --</option>
+          </select>
+        </div> 
+      </div>
+      <button id="toggleCustomerInfoBtn" class="toggle-section-btn secondary" style="margin-right: 10px;">상세 정보 숨기기</button>
+      <div id="customerInfoGroup">
         <div class="details-section"> 
-          <h3>고객 상세 정보</h3> 
+          <h3>고객 상세 정보 </h3> 
           <div class="details-grid"> 
             <div class="form-group">
               <label for="customerType">고객 유형:</label>
@@ -408,6 +436,7 @@
             </div>
             <div class="form-group"><label for="paymentMethod">결제 방식:</label><input type="text" id="paymentMethod" placeholder="예: 현금, 카드"></div> </div>
         </div>
+      </div>
 
         <div class="details-section">
             <h3>상담 / 계약 상태</h3>
