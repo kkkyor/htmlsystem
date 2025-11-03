@@ -10,17 +10,167 @@
   <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700" rel="stylesheet">
 
   <style>
-    /* (CSS 스타일은 이전과 동일) */
-    body { font-family: 'Arial', sans-serif; line-height: 1.6; margin: 0; padding: 20px; background-color: #f4f4f4; color: #333; }
-    .container { max-width: 1500px; margin: auto; background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 0 10px rgba(0, 0, 0, 0.1); }
-    .list-panel, .detail-panel { padding: 15px; border: 1px solid #ddd; border-radius: 5px; }
+    /* ----------------------------------------------------------------- */
+    /* ★ [핵심] 기본 레이아웃 설정 */
+    /* ----------------------------------------------------------------- */
+    body { 
+      font-family: 'Arial', sans-serif; 
+      line-height: 1.6; 
+      margin: 0; 
+      padding: 10px;
+      background-color: #f4f4f4; 
+      color: #333; 
+      overflow: hidden; /* ★ 전체 페이지 스크롤 방지 */
+    }
+    
+    .container { 
+      max-width: 100%; /* 너비 꽉 채우기 */
+      height: calc(100vh - 20px); /* 뷰포트 높이 꽉 채우기 */
+      margin: 0;
+      padding: 0;
+      background: #fff; /* ★ [수정] 컨테이너에 흰색 배경 */
+      border-radius: 8px;
+      box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+      box-sizing: border-box;
+      display: flex; /* ★ [수정] 내부 패널이 높이를 100% 채우도록 */
+      flex-direction: column;
+    }
+    
+    /* ★ [핵심] '목록 뷰'와 '상세 뷰'의 공통 스타일 */
+    .list-panel, .detail-panel {
+      width: 100%;
+      height: 100%;
+      box-sizing: border-box;
+      display: flex; /* ★ [핵심] 2단 분할을 위해 Flex (가로 배치) */
+      flex-direction: row;
+      gap: 10px;
+      padding: 15px;
+    }
+
     h2, h3 { color: #0056b3; border-bottom: 2px solid #eee; padding-bottom: 5px; margin-top: 0; }
-    ul { list-style: none; padding: 0; max-height: 70vh; overflow-y: auto; }
-    li { background: #eee; margin-bottom: 8px; padding: 10px; border-radius: 4px; cursor: pointer; transition: background-color 0.3s ease; border-left: 3px solid transparent; }
-    li:hover { background-color: #ddd; }
+    
+    /* ----------------------------------------------------------------- */
+    /* ★ [핵심] 뷰 1: 목록 화면 (List View) - 2단 분할 */
+    /* ----------------------------------------------------------------- */
+    
+    /* 목록 뷰 - 좌측 패널 (필터 + ToDo) */
+    .list-left-pane {
+      flex: 0 0 350px; /* 좌측 너비 고정 */
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      gap: 15px;
+    }
+    .filter-panel { 
+      padding: 15px; 
+      border: 1px solid #ddd; 
+      border-radius: 5px; 
+      background-color: #f9f9f9;
+      flex-shrink: 0; /* 크기 고정 */
+    }
+    
+    #todoListPanel {
+      flex-grow: 1; /* 남은 공간 차지 */
+      border: 1px solid #ddd;
+      border-radius: 5px;
+      padding: 15px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden; /* 내부 스크롤을 위해 */
+    }
+    #todoCustomersList {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+      overflow-y: auto; /* ★ ToDo 목록 내부 스크롤 */
+      flex-grow: 1;
+    }
+    #todoCustomersList li { 
+      padding: 10px; 
+      background: #fdfdfd; 
+      border-bottom: 1px solid #eee; 
+      font-size: 0.95rem; 
+      cursor: pointer;
+      border-left: 3px solid #ffc107; /* ToDo 강조 */
+    }
+    #todoCustomersList li:hover { background-color: #fffbef; }
+
+    /* 목록 뷰 - 우측 패널 (전체 목록) */
+    .list-right-pane {
+      flex: 1; /* 남은 공간 차지 */
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      border: 1px solid #ddd;
+      border-radius: 5px;
+      padding: 15px;
+      box-sizing: border-box;
+      overflow: hidden; /* 내부 스크롤을 위해 */
+    }
+    .list-header { flex-shrink: 0; }
+    
+    ul#assignedCustomersList { 
+      list-style: none; 
+      padding: 0; 
+      margin: 0;
+      flex-grow: 1; /* 목록(ul)이 남은 공간 차지 */
+      overflow-y: auto; /* ★ 목록만 스크롤 */
+      max-height: none; /* 기존 max-height 제거 */
+    }
     li.active { background-color: #cce5ff; border-left: 3px solid #0056b3; font-weight: bold; }
-    li strong { color: #0056b3; }
-    .list-item-status { font-size: 0.9em; color: #555; }
+    #assignedCustomersList li { background: #f9f9f9; margin-bottom: 10px; padding: 12px 15px; border-radius: 5px; cursor: pointer; transition: background-color 0.3s ease; border-left: 4px solid transparent; line-height: 1.5; }
+
+
+    /* ----------------------------------------------------------------- */
+    /* ★ [핵심] 뷰 2: 상세 화면 (Detail View) - 2단 분할 */
+    /* ----------------------------------------------------------------- */
+    
+    /* 상세 뷰 - 좌측 패널 (고객 정보) */
+    .detail-info-pane {
+      flex: 1; /* 남은 공간 차지 */
+      height: 100%;
+      overflow-y: auto; /* ★ [핵심] 고객 정보 영역만 스크롤 */
+      border: 1px solid #ddd;
+      border-radius: 5px;
+      padding: 15px;
+      box-sizing: border-box;
+    }
+    
+    /* 상세 뷰 - 우측 패널 (상담 기록) */
+    .detail-log-pane {
+      flex: 0 0 450px; /* 우측 너비 고정 */
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      border: 1px solid #ddd;
+      border-radius: 5px;
+      padding: 15px;
+      box-sizing: border-box;
+      background-color: #fdfdfd;
+      overflow: hidden; /* 내부 스크롤을 위해 */
+    }
+    .detail-log-pane .log-entries {
+      flex-grow: 1; /* 상담 목록이 남은 공간 차지 */
+      overflow-y: auto; /* ★ [핵심] 상담 목록만 스크롤 */
+      min-height: 200px;
+      border: 1px solid #eee;
+      padding: 10px;
+      background-color: #fff;
+      margin-bottom: 15px;
+    }
+    .log-entry { background: #f9f9f9; border-bottom: 1px solid #eee; padding: 10px; margin-bottom: 5px; font-size: 0.9rem; white-space: pre-wrap; }
+    .log-entry:last-child { border-bottom: none; }
+    .log-entry strong { color: #0056b3; margin-right: 10px; }
+    
+    .detail-log-pane .log-add-section {
+      flex-shrink: 0; /* 크기 고정 */
+    }
+    .detail-log-pane .form-group { margin-top: 0; margin-bottom: 10px; }
+    .detail-log-pane textarea { min-height: 120px; }
+
+    /* ----------------------------------------------------------------- */
+    /* 기타 유틸리티 및 공통 스타일 */
+    /* ----------------------------------------------------------------- */
     .info-item { margin-bottom: 10px; display: flex; align-items: center; }
     .info-item strong { display: inline-block; width: 120px; color: #555; flex-shrink: 0; }
     .info-input { border: 1px solid #ccc; padding: 5px; border-radius: 4px; font-size: 1rem; }
@@ -29,8 +179,8 @@
     .form-group { margin-bottom: 15px; }
     .form-group label { display: block; margin-bottom: 5px; font-weight: bold; }
     .form-group select, .form-group textarea, .form-group input { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 4px; font-size: 1rem; box-sizing: border-box; font-family: 'Roboto', sans-serif; }
-    .form-group textarea { resize: vertical; min-height: 200px; }
-    button { background-color: #007bff; color: white; padding: 10px 15px; border: none; border-radius: 4px; cursor: pointer; font-size: 1rem; transition: background-color 0.3s ease; }
+    .form-group textarea { resize: vertical; }
+    button { background-color: #007bff; color: white; padding: 10px 15px; border: none; border-radius: 4px; cursor: pointer; font-size: 1rem; transition: background-color: 0.3s ease; }
     button:hover { background-color: #0056b3; }
     button:disabled { background-color: #ccc; cursor: not-allowed; }
     button.secondary { background-color: #6c757d; }
@@ -39,248 +189,90 @@
     .details-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 15px; margin-bottom: 15px; }
     .contract-info { background-color: #e9f5ff; padding: 15px; border-radius: 5px; }
     .contract-info h3 { color: #004085; border-bottom-color: #b8daff; }
-    .log-entries { min-height: 250px; max-height: 400px; overflow-y: auto; border: 1px solid #eee; padding: 10px; background-color: #fdfdfd; }
-    .log-entry { background: #f9f9f9; border-bottom: 1px solid #eee; padding: 10px; margin-bottom: 5px; font-size: 0.9rem; white-space: pre-wrap; }
-    .log-entry:last-child { border-bottom: none; }
-    .log-entry strong { color: #0056b3; margin-right: 10px; }
-    .filter-panel { margin-bottom: 20px; padding: 15px; border: 1px solid #ddd; border-radius: 5px; background-color: #f9f9f9; }
-    .filter-group { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 15px; align-items: end; }
-    .filter-group select,
-    .filter-group input,
-    .search-group input {
-      width: 100%;
-      padding: 10px;
-      box-sizing: border-box;
-      font-size: 1rem;
-      border: 1px solid #ccc;
-      border-radius: 4px;
-      font-family: 'Roboto', sans-serif;
-    }
-    .search-group { 
-      flex-basis: 50%;
-    }
+    .list-item-status { font-size: 0.9em; color: #555; }
+    .filter-group { display: grid; grid-template-columns: 1fr; gap: 10px; }
+    .filter-top-row { display: flex; flex-direction: column; gap: 10px; margin-bottom: 15px; }
+    .search-group { flex-basis: 100%; }
+    .filter-actions { display: flex; gap: 10px; }
+    .filter-actions button { flex: 1; }
+    .filter-group select, .filter-group input, .search-group input { width: 100%; padding: 10px; box-sizing: border-box; font-size: 1rem; border: 1px solid #ccc; border-radius: 4px; font-family: 'Roboto', sans-serif; }
+    .list-header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 10px; }
+    .add-action-panel { display: flex; gap: 10px; }
+
+    /* 모달, 로더, 상태 배지 */
     .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0, 0, 0, 0.6); z-index: 100001; display: flex; justify-content: center; align-items: center; }
-    #loader {
-      z-index: 100002;
-    }
+    #loader { z-index: 100002; }
     .modal-content { background: #fff; padding: 25px; border-radius: 8px; width: 90%; max-width: 500px; box-shadow: 0 5px 15px rgba(0,0,0,0.3); }
     .modal-actions { text-align: right; margin-top: 20px; display: flex; gap: 10px; justify-content: flex-end; }
     .loader-content { display: flex; flex-direction: column; align-items: center; color: white; font-size: 1.2rem; }
     .spinner { border: 6px solid #f3f3f3; border-top: 6px solid #007bff; border-radius: 50%; width: 50px; height: 50px; animation: spin 1s linear infinite; margin-bottom: 15px; }
     @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-    .status-badge {
-      padding: 3px 8px;
-      border-radius: 12px;
-      font-size: 0.85em;
-      font-weight: bold;
-      color: #333;
-      background-color: #e0e0e0; 
+    .status-badge { padding: 3px 8px; border-radius: 12px; font-size: 0.85em; font-weight: bold; color: #333; background-color: #e0e0e0; }
+    .status-badge.consulting { background-color: #fff3cd; color: #664d03; }
+    .status-badge.completed { background-color: #d1e7dd; color: #0f5132; }
+    .status-badge.contracted { background-color: #cce5ff; color: #004085; border: 1px solid #0056b3; }
+    .status-badge.failed { background-color: #f8d7da; color: #58151c; }
+    
+    /* ★ [핵심] hidden 클래스 로직 (패널 전환 및 모달용) */
+    .hidden,
+    #loader.hidden, 
+    #addCustomerModal.hidden,
+    #contractInfoSection.hidden,
+    #customerInfoGroup.hidden { 
+      display: none !important; 
     }
-    .status-badge.consulting { 
-      background-color: #fff3cd;
-      color: #664d03;
-    }
-    .status-badge.completed { 
-      background-color: #d1e7dd;
-      color: #0f5132;
-    }
-    .status-badge.contracted { 
-      background-color: #cce5ff;
-      color: #004085;
-      border: 1px solid #0056b3;
-    }
-    .status-badge.failed { 
-      background-color: #f8d7da;
-      color: #58151c;
-    }
-    .filter-top-row {
-      display: flex;
-      justify-content: space-between;
-      align-items: end;
-      margin-bottom: 15px; 
-      gap: 15px;
-    }
-    .list-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: baseline; 
-      margin-bottom: 10px; 
-    }
-    .filter-actions {
-      display: flex;
-      gap: 10px;
-    }
-    .hidden { display: none !important; }
-    #assignedCustomersList li {
-    background: #f9f9f9;
-    margin-bottom: 10px;
-    padding: 12px 15px;
-    border-radius: 5px;
-    cursor: pointer;
-    transition: background-color 0.3s ease;
-    border-left: 4px solid transparent;
-    line-height: 1.5;
-  }
+    
+    .error-modal-content { background: #fff; padding: 25px; border-radius: 8px; width: 90%; max-width: 400px; box-shadow: 0 5px 15px rgba(0,0,0,0.3); }
+    .error-modal-content h3 { color: #dc3545; margin-top: 0; border-bottom: 2px solid #eee; }
+    .error-modal-content p { margin: 20px 0; font-size: 1.1rem; }
+    .error-modal-btn { background-color: #dc3545 !important; color: white; width: 100%; }
+    .error-modal-btn:hover { background-color: #c82333 !important; }
 
-   .error-modal-content {
-      background: #fff; 
-      padding: 25px; 
-      border-radius: 8px; 
-      width: 90%; 
-      max-width: 400px; 
-      box-shadow: 0 5px 15px rgba(0,0,0,0.3);
-    }
-    .error-modal-content h3 {
-      color: #dc3545;
-      margin-top: 0;
-      border-bottom: 2px solid #eee;
-    }
-    .error-modal-content p {
-      margin: 20px 0;
-      font-size: 1.1rem;
-    }
-    .error-modal-btn {
-      background-color: #dc3545 !important; 
-      color: white;
-      width: 100%;
-    }
-    .error-modal-btn:hover {
-      background-color: #c82333 !important;
-    }
-
-    @media (max-width: 768px) {
-      body {
-        padding: 10px;
-      }
-      .container {
-        padding: 10px;
-      }
-      .details-grid, .filter-group {
-        grid-template-columns: 1fr !important;
-      }
-      .filter-top-row {
+    /* 반응형 (화면이 좁아지면 2단 분할을 세로로 쌓음) */
+    @media (max-width: 1200px) {
+      .list-panel, .detail-panel {
         flex-direction: column;
-        align-items: stretch;
+        overflow-y: auto; /* 패널 자체가 스크롤되도록 */
+        height: auto; 
       }
-      .search-group {
-        flex-basis: 100%;
-      }
-      .filter-actions {
+      .list-left-pane, .list-right-pane,
+      .detail-info-pane, .detail-log-pane {
+        flex-basis: auto; 
         width: 100%;
-        justify-content: stretch;
+        height: auto; 
+        overflow-y: visible; /* 내부 스크롤 제거 */
       }
-      .filter-actions button {
-        flex: 1;
+      ul#assignedCustomersList, #todoCustomersList {
+        max-height: 50vh; 
+        overflow-y: auto;
       }
-      li {
-        padding: 15px;
-      }
-      button {
-        min-height: 44px;
-      }
-      .info-item {
-        flex-direction: column;
-        align-items: flex-start;
-      }
-      .info-item strong {
-        width: 100%;
-        margin-bottom: 5px;
+      .detail-log-pane .log-entries {
+        max-height: 40vh; 
+        overflow-y: auto;
       }
     }
 
-  /* 스켈레톤 로딩 UI */
-    .skeleton-li {
-      background: #f9f9f9;
-      margin-bottom: 10px;
-      padding: 12px 15px;
-      border-radius: 5px;
-      border-left: 4px solid transparent;
-      line-height: 1.5;
-    }
-    .skeleton-item {
-      background: linear-gradient(90deg, #eee 25%, #e0e0e0 50%, #eee 75%);
-      background-size: 200% 100%;
-      animation: skeleton-shine 1.5s infinite linear;
-      border-radius: 4px;
-    }
+    /* 스켈레톤, 플래시 등 */
+    .skeleton-li { background: #f9f9f9; margin-bottom: 10px; padding: 12px 15px; border-radius: 5px; border-left: 4px solid transparent; line-height: 1.5; }
+    .skeleton-item { background: linear-gradient(90deg, #eee 25%, #e0e0e0 50%, #eee 75%); background-size: 200% 100%; animation: skeleton-shine 1.5s infinite linear; border-radius: 4px; }
     .skeleton-li .line-1 { height: 1.15em; width: 40%; margin-bottom: 8px; }
     .skeleton-li .line-2 { height: 0.95em; width: 60%; margin-bottom: 8px; }
     .skeleton-li .line-3 { height: 0.9em; width: 30%; border-top: 1px solid #eee; padding-top: 8px; }
-    @keyframes skeleton-shine {
-      0% { background-position: 200% 0; }
-      100% { background-position: -200% 0; }
-    }
-
-  /* 저장 성공 시각적 피드백 */
-    .flash-success {
-      animation: flash-green 1s ease-out;
-    }
-    @keyframes flash-green {
-      0% { background-color: #d4edda; }
-      100% { background-color: #f9f9f9; }
-    }
-    /* (style 태그 안 기존 CSS 규칙들 아래에 추가) */
-
-  .form-group-inline label {
-    /* 인라인 그룹에서는 레이블이 너무 많은 공간 차지 않도록 조정 (선택 사항) */
-    margin-bottom: 3px; 
-  }
-
-  .input-button-group {
-    display: flex; /* input과 button을 가로로 배치 */
-    align-items: center; /* 세로 중앙 정렬 */
-    gap: 8px; /* input과 button 사이 간격 */
-  }
-
-  .input-button-group input {
-    flex-grow: 1; /* input이 남은 공간을 모두 차지하도록 */
-    /* 버튼과 높이를 맞추기 위해 padding 조정 (기존 .info-input 스타일과 다를 수 있음) */
-    padding: 8px 10px; 
-    height: auto; /* 명시적 높이 제거 */
-    line-height: normal; /* 라인 높이 초기화 */
-    min-height: 44px; /* 버튼과 최소 높이 맞춤 */
-    box-sizing: border-box; 
-  }
-
-  .input-button-group button {
-    flex-shrink: 0; /* 버튼 크기가 줄어들지 않도록 */
-    /* input과 높이/패딩 조정 */
-    padding: 8px 12px; 
-    font-size: 0.9rem; /* 버튼 폰트 약간 작게 (선택 사항) */
-    height: 44px; /* input과 높이 맞춤 */
-    line-height: 1.5; /* 버튼 텍스트 세로 정렬 */
-    box-sizing: border-box;
-  }
-  .detail-panel #assignmentDetails .details-section:first-child .form-group,
-  .detail-panel #assignmentDetails .details-section:first-child .form-group-inline {
-    max-width: 450px; /* UX상 자연스러운 최대 너비 (조절 가능) */
-  /* (style 태그 안에 추가) */
-
-  /* h3 태그 내부에 제목과 버튼을 양끝으로 배치 */
-  .details-section h3 {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-  }
-
-  /* 토글 버튼 기본 스타일 */
-  .toggle-section-btn {
-    font-size: 0.85rem;    /* 폰트 크기 작게 */
-    padding: 3px 10px;     /* 패딩 축소 */
-    /* 'secondary' 스타일(회색)을 기본으로 사용 */
-    background-color: #6c757d;
-    min-height: auto;      /* 다른 버튼과 높이 다르게 */
-    height: auto;
-    line-height: 1.5;
-  }
-  .toggle-section-btn:hover {
-    background-color: #5a6268;
-  }
-
-}
+    @keyframes skeleton-shine { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+    .flash-success { animation: flash-green 1s ease-out; }
+    @keyframes flash-green { 0% { background-color: #d4edda; } 100% { background-color: #f9f9f9; } }
+    .form-group-inline label { margin-bottom: 3px; }
+    .input-button-group { display: flex; align-items: center; gap: 8px; }
+    .input-button-group input { flex-grow: 1; padding: 8px 10px; height: auto; line-height: normal; min-height: 44px; box-sizing: border-box; }
+    .input-button-group button { flex-shrink: 0; padding: 8px 12px; font-size: 0.9rem; height: 44px; line-height: 1.5; box-sizing: border-box; }
+    .detail-info-pane .details-section:first-child .form-group,
+    .detail-info-pane .details-section:first-child .form-group-inline { max-width: 450px; }
+    .details-section h3 { display: flex; justify-content: space-between; align-items: center; }
+    .toggle-section-btn { font-size: 0.85rem; padding: 3px 10px; background-color: #6c757d; min-height: auto; height: auto; line-height: 1.5; }
+    .toggle-section-btn:hover { background-color: #5a6268; }
   </style>
 </head>
-<body data-view="<?= view ?>" data-is-dual-mode="<?= isDualMode ?>" data-script-url="<?= scriptUrl ?>">
+<body data-view="<?= view ?>" data-is-dual-mode="false" data-script-url="<?= scriptUrl ?>">
 
   <div id="loader" class="modal-overlay hidden" role="alert" aria-live="assertive">
     <div class="loader-content"><div class="spinner"></div><p>처리 중입니다...</p></div>
@@ -297,191 +289,217 @@
   </div>
 
   <div class="container">
-        <div class="list-panel" id="listPanel">
+        
+    <div class="list-panel" id="listPanel">
       
-      <div class="list-header">
-        <h2>나에게 배정된 고객 목록</h2>
-        <div class="add-action-panel" style="display: flex; gap: 10px;">
-          <button id="switchToDualModeBtn" class="secondary">🖥️ 듀얼 모드</button>
-          <button id="openAddCustomerModalBtn">+ 신규 고객 추가</button>
+      <div class="list-left-pane">
+        <div class="filter-panel">
+          <h3>빠른 검색 및 필터</h3>
+          <div class="filter-top-row">
+            <div class="search-group">
+              <label for="filterSearchTerm">이름 또는 전화번호:</label>
+              <input type="text" id="filterSearchTerm" placeholder="검색어 입력...">
+            </div>
+            <div class="filter-actions">
+              <button id="resetFilterBtn" class="secondary">초기화</button>
+              <button id="applyFilterBtn">검색</button>
+            </div>
+          </div>
+          <div class="filter-group">
+            <div><label for="filterDbType">디비 유형:</label><select id="filterDbType"><option value="">전체</option></select></div>
+            <div><label for="filterAssignmentDateFrom">배정일 시작:</label><input type="date" id="filterAssignmentDateFrom"></div>
+            <div><label for="filterAssignmentDateTo">배정일 종료:</label><input type="date" id="filterAssignmentDateTo"></div>
+            <div><label for="filterConsultationStatus">상담 상태:</label><select id="filterConsultationStatus"><option value="">전체</option><option value="배정됨">배정됨</option><option value="연락 시도 중">연락 시도 중</option><option value="상담 진행 중">상담 진행 중</option><option value="추가 정보 요청">추가 정보 요청</option><option value="상담 완료">상담 완료</option></select></div>
+            <div><label for="filterContractStatus">계약 상태:</label><select id="filterContractStatus"><option value="">전체</option><option value="미해당">미해당</option><option value="계약 제안">계약 제안</option><option value="협상 중">협상 중</option><option value="계약 체결">계약 체결</option><option value="계약 무산">계약 무산</option><option value="계약 종료">계약 종료</option></select></div>
+          </div>
+        </div>
+        
+        <div id="todoListPanel">
+          <h3>상담 전 고객 (To-Do)</h3>
+          <ul id="todoCustomersList">
+            <li>(기능 구현 예정)</li>
+            </ul>
         </div>
       </div>
       
-      <div class="filter-panel">
-        <h3>목록 필터링</h3>
-        <div class="filter-top-row">
-          <div class="search-group">
-            <label for="filterSearchTerm">이름 또는 전화번호로 검색:</label>
-            <input type="text" id="filterSearchTerm" placeholder="검색어 입력...">
-          </div>
-          <div class="filter-actions">
-            <button id="resetFilterBtn" class="secondary">필터 초기화</button>
-            <button id="applyFilterBtn">필터 적용</button>
+      <div class="list-right-pane">
+        <div class="list-header">
+          <h2>전체 고객 목록 (검색 결과)</h2>
+          <div class="add-action-panel">
+            <button id="openAddCustomerModalBtn">+ 신규 고객 추가</button>
           </div>
         </div>
-        <div class="filter-group">
-          <div><label for="filterDbType">디비 유형:</label><select id="filterDbType"><option value="">전체</option></select></div>
-          <div><label for="filterAssignmentDateFrom">배정일 시작:</label><input type="date" id="filterAssignmentDateFrom"></div>
-          <div><label for="filterAssignmentDateTo">배정일 종료:</label><input type="date" id="filterAssignmentDateTo"></div>
-          <div><label for="filterConsultationStatus">상담 상태:</label><select id="filterConsultationStatus"><option value="">전체</option><option value="배정됨">배정됨</option><option value="연락 시도 중">연락 시도 중</option><option value="상담 진행 중">상담 진행 중</option><option value="추가 정보 요청">추가 정보 요청</option><option value="상담 완료">상담 완료</option></select></div>
-          <div><label for="filterContractStatus">계약 상태:</label><select id="filterContractStatus"><option value="">전체</option><option value="미해당">미해당</option><option value="계약 제안">계약 제안</option><option value="협상 중">협상 중</option><option value="계약 체결">계약 체결</option><option value="계약 무산">계약 무산</option><option value="계약 종료">계약 종료</option></select></div>
+        
+        <ul id="assignedCustomersList"><li>로딩 중...</li></ul>
+        
+        <div style="text-align: center; margin-top: 10px; flex-shrink: 0;">
+          <button id="loadMoreBtn" class="secondary hidden">+ 더보기</button>
         </div>
       </div>
-      <ul id="assignedCustomersList"><li>로딩 중...</li></ul>
-      <div style="text-align: center; margin-top: 20px;">
-        <button id="loadMoreBtn" class="secondary hidden">+ 더보기</button>
-      </div>
+      
     </div>
     
     <div class="detail-panel hidden" id="customerDetailPanel">
-            <a href="#" id="backToListBtn" class="back-link">&larr; 목록으로 돌아가기</a>
-      <h2 id="detailCustomerName">고객 상세 정보</h2>
-      <div id="assignmentDetails">
-        <div class="details-section">
-        <h3>고객 기본 정보</h3> 
-        <div class="info-item"> 
-            <strong>고객명:</strong> <span id="detailCustomerNameSpan"></span> </div>
-          <div class="info-item">
-            <strong>배정 ID:</strong> <span id="detailAssignmentId"></span>
+      
+      <div class="detail-info-pane">
+        <a href="#" id="backToListBtn" class="back-link">&larr; 목록으로 돌아가기</a>
+        <h2 id="detailCustomerName"></h2>
+        
+        <div id="assignmentDetails"> 
+          <div class="details-section" style="border-top: none; margin-top: 0; padding-top: 0;">
+            <h3>고객 기본 정보</h3> 
+            <div class="info-item"> 
+                <strong>고객명:</strong> <span id="detailCustomerNameSpan"></span> </div>
+              <div class="info-item">
+                <strong>배정 ID:</strong> <span id="detailAssignmentId"></span>
+              </div>
+              <div class="info-item">
+                <strong>DB 유형:</strong> <span id="detailDbType"></span>
+              </div>
+              <div class="info-item">
+                <strong>배정일:</strong> <span id="detailAssignmentDate"></span>
+              </div>
+              <div class="info-item"> 
+              <strong>연락처:</strong> 
+              <div class="input-button-group">
+                <input type="tel" id="detailCustomerPhoneNumber" class="info-input"> 
+                <button id="savePhoneNumberBtn">번호 저장</button>
+              </div>
+            </div>
+            <div class="info-item"> 
+              <strong>유입 경로:</strong> 
+              <select id="leadSource" class="info-input"> <option value="">-- 선택 --</option>
+              </select>
+            </div> 
           </div>
-          <div class="info-item">
-            <strong>DB 유형:</strong> <span id="detailDbType"></span>
+          
+          <button id="toggleCustomerInfoBtn" class="toggle-section-btn secondary" style="margin-right: 10px;">상세 정보 숨기기</button>
+          
+          <div id="customerInfoGroup">
+            <div class="details-section"> 
+              <h3>고객 상세 정보 </h3> 
+              <div class="details-grid"> 
+                <div class="form-group">
+                  <label for="customerType">고객 유형:</label>
+                  <select id="customerType"><option value="">-- 선택 --</option><option value="개인">개인</option><option value="개인사업자">개인사업자</option><option value="법인">법인</option></select>
+                </div>
+                <div class="form-group">
+                  <label for="gender">성별:</label>
+                  <select id="gender"><option value="">-- 선택 --</option><option value="남성">남성</option><option value="여성">여성</option></select>
+                </div>
+                <div class="form-group">
+                  <label for="ageGroup">연령대:</label>
+                  <select id="ageGroup"><option value="">-- 선택 --</option></select> 
+                </div>
+                <div class="form-group">
+                  <label for="addressCity">주소 (시/도):</label>
+                  <select id="addressCity"><option value="">-- 선택 --</option></select> 
+                </div>
+                <div class="form-group">
+                  <label for="addressDistrict">주소 (시/군/구):</label>
+                  <select id="addressDistrict"><option value="">-- 선택 --</option></select> 
+                </div>
+                <div class="form-group">
+                  <label for="incomeType">소득 구분:</label>
+                  <select id="incomeType"><option value="">-- 선택 --</option></select> 
+                </div>
+                <div class="form-group">
+                  <label for="creditInfo">신용 정보:</label>
+                  <select id="creditInfo"><option value="">-- 선택 --</option></select> 
+                </div>
+              </div> 
+            </div>
+            <div class="details-section">
+              <h3>고객 니즈</h3>
+              <div class="details-grid">
+                <div class="form-group"><label for="interestedCarModel">관심 차종:</label><input type="text" id="interestedCarModel"></div>
+                <div class="form-group"><label for="comparisonCarModel">비교 차량:</label><input type="text" id="comparisonCarModel"></div>
+                <div class="form-group"><label for="ownedCarModel">보유 차량:</label><input type="text" id="ownedCarModel"></div>
+                <div class="form-group">
+                  <label for="carUsage">차량 용도:</label>
+                  <select id="carUsage"><option value="">-- 선택 --</option></select> </div>
+                 <div class="form-group">
+                  <label for="driverScope">운전자 범위:</label> <input type="text" id="driverScope" placeholder="예: 누구나">
+                </div>
+              </div>
+            </div>
+            <div class="details-section">
+              <h3>희망 계약 조건</h3>
+              <div class="details-grid">
+                <div class="form-group">
+                  <label for="expectedContractTiming">계약 예정 시기:</label>
+                  <select id="expectedContractTiming"><option value="">-- 선택 --</option></select> </div>
+                <div class="form-group">
+                  <label for="desiredContractTerm">희망 계약 기간:</label>
+                  <select id="desiredContractTerm"><option value="">-- 선택 --</option></select> </div>
+                <div class="form-group">
+                  <label for="desiredInitialCostType">희망 초기 비용:</label>
+                  <select id="desiredInitialCostType"><option value="">-- 선택 --</option></select> </div>
+                <div class="form-group">
+                  <label for="maintenanceServiceLevel">정비 서비스:</label>
+                  <select id="maintenanceServiceLevel"><option value="">-- 선택 --</option></select> </div>
+                <div class="form-group"><label for="salesCondition">판매 조건:</label><input type="text" id="salesCondition"></div>
+                <div class="form-group">
+                  <label for="isRepurchase">재구매 여부:</label>
+                  <select id="isRepurchase"><option value="">-- 선택 --</option><option value="Y">Y</option><option value="N">N</option></select>
+                </div>
+                <div class="form-group"><label for="paymentMethod">결제 방식:</label><input type="text" id="paymentMethod" placeholder="예: 현금, 카드"></div> </div>
+            </div>
           </div>
-          <div class="info-item">
-            <strong>배정일:</strong> <span id="detailAssignmentDate"></span>
-          </div>
-          <div class="info-item"> 
-          <strong>연락처:</strong> 
-          <div class="input-button-group">
-            <input type="tel" id="detailCustomerPhoneNumber" class="info-input"> 
-            <button id="savePhoneNumberBtn">번호 저장</button>
-          </div>
-        </div>
 
-        <div class="info-item"> 
-          <strong>유입 경로:</strong> 
-          <select id="leadSource" class="info-input"> <option value="">-- 선택 --</option>
-          </select>
-        </div> 
-      </div>
-      <button id="toggleCustomerInfoBtn" class="toggle-section-btn secondary" style="margin-right: 10px;">상세 정보 숨기기</button>
-      <div id="customerInfoGroup">
-        <div class="details-section"> 
-          <h3>고객 상세 정보 </h3> 
-          <div class="details-grid"> 
-            <div class="form-group">
-              <label for="customerType">고객 유형:</label>
-              <select id="customerType"><option value="">-- 선택 --</option><option value="개인">개인</option><option value="개인사업자">개인사업자</option><option value="법인">법인</option></select>
-            </div>
-            <div class="form-group">
-              <label for="gender">성별:</label>
-              <select id="gender"><option value="">-- 선택 --</option><option value="남성">남성</option><option value="여성">여성</option></select>
-            </div>
-            <div class="form-group">
-              <label for="ageGroup">연령대:</label>
-              <select id="ageGroup"><option value="">-- 선택 --</option></select> 
-            </div>
-            <div class="form-group">
-              <label for="addressCity">주소 (시/도):</label>
-              <select id="addressCity"><option value="">-- 선택 --</option></select> 
-            </div>
-            <div class="form-group">
-              <label for="addressDistrict">주소 (시/군/구):</label>
-              <select id="addressDistrict"><option value="">-- 선택 --</option></select> 
-            </div>
-            <div class="form-group">
-              <label for="incomeType">소득 구분:</label>
-              <select id="incomeType"><option value="">-- 선택 --</option></select> 
-            </div>
-            <div class="form-group">
-              <label for="creditInfo">신용 정보:</label>
-              <select id="creditInfo"><option value="">-- 선택 --</option></select> 
-            </div>
-          </div> 
-        </div>
-        <div class="details-section">
-          <h3>고객 니즈</h3>
-          <div class="details-grid">
-            <div class="form-group"><label for="interestedCarModel">관심 차종:</label><input type="text" id="interestedCarModel"></div>
-            <div class="form-group"><label for="comparisonCarModel">비교 차량:</label><input type="text" id="comparisonCarModel"></div>
-            <div class="form-group"><label for="ownedCarModel">보유 차량:</label><input type="text" id="ownedCarModel"></div>
-            <div class="form-group">
-              <label for="carUsage">차량 용도:</label>
-              <select id="carUsage"><option value="">-- 선택 --</option></select> </div>
-             <div class="form-group">
-              <label for="driverScope">운전자 범위:</label> <input type="text" id="driverScope" placeholder="예: 누구나">
-            </div>
+          <div class="details-section">
+              <h3>상담 / 계약 상태</h3>
+              <div class="details-grid">
+                <div class="form-group">
+                  <label for="customerStatus">고객 상태:</label>
+                  <select id="customerStatus"><option value="">-- 선택 --</option></select> </div>
+                <div class="form-group">
+                  <label for="consultationStatus">상담 상태:</label>
+                  <select id="consultationStatus"><option value="">-- 선택 --</option><option value="배정됨">배정됨</option><option value="연락 시도 중">연락 시도 중</option><option value="상담 진행 중">상담 진행 중</option><option value="추가 정보 요청">추가 정보 요청</option><option value="상담 완료">상담 완료</option></select>
+                </div>
+                <div class="form-group">
+                  <label for="contractStatus">계약 상태:</label>
+                  <select id="contractStatus"><option value="">-- 선택 --</option><option value="미해당">미해당</option><option value="계약 제안">계약 제안</option><option value="협상 중">협상 중</option><option value="계약 체결">계약 체결</option><option value="계약 무산">계약 무산</option><option value="계약 종료">계약 종료</option></select>
+                </div>
+              </div>
+              <button id="saveCustomerDetailsBtn">고객 및 상담 정보 저장</button>
           </div>
-        </div>
 
-        <div class="details-section">
-          <h3>희망 계약 조건</h3>
-          <div class="details-grid">
-            <div class="form-group">
-              <label for="expectedContractTiming">계약 예정 시기:</label>
-              <select id="expectedContractTiming"><option value="">-- 선택 --</option></select> </div>
-            <div class="form-group">
-              <label for="desiredContractTerm">희망 계약 기간:</label>
-              <select id="desiredContractTerm"><option value="">-- 선택 --</option></select> </div>
-            <div class="form-group">
-              <label for="desiredInitialCostType">희망 초기 비용:</label>
-              <select id="desiredInitialCostType"><option value="">-- 선택 --</option></select> </div>
-            <div class="form-group">
-              <label for="maintenanceServiceLevel">정비 서비스:</label>
-              <select id="maintenanceServiceLevel"><option value="">-- 선택 --</option></select> </div>
-            <div class="form-group"><label for="salesCondition">판매 조건:</label><input type="text" id="salesCondition"></div>
-            <div class="form-group">
-              <label for="isRepurchase">재구매 여부:</label>
-              <select id="isRepurchase"><option value="">-- 선택 --</option><option value="Y">Y</option><option value="N">N</option></select>
-            </div>
-            <div class="form-group"><label for="paymentMethod">결제 방식:</label><input type="text" id="paymentMethod" placeholder="예: 현금, 카드"></div> </div>
-        </div>
-      </div>
-
-        <div class="details-section">
-            <h3>상담 / 계약 상태</h3>
+          <div id="contractInfoSection" class="hidden details-section contract-info">
+            <h3>계약 상세 정보</h3>
             <div class="details-grid">
-              <div class="form-group">
-                <label for="customerStatus">고객 상태:</label>
-                <select id="customerStatus"><option value="">-- 선택 --</option></select> </div>
-              <div class="form-group">
-                <label for="consultationStatus">상담 상태:</label>
-                <select id="consultationStatus"><option value="">-- 선택 --</option><option value="배정됨">배정됨</option><option value="연락 시도 중">연락 시도 중</option><option value="상담 진행 중">상담 진행 중</option><option value="추가 정보 요청">추가 정보 요청</option><option value="상담 완료">상담 완료</option></select>
-              </div>
-              <div class="form-group">
-                <label for="contractStatus">계약 상태:</label>
-                <select id="contractStatus"><option value="">-- 선택 --</option><option value="미해당">미해당</option><option value="계약 제안">계약 제안</option><option value="협상 중">협상 중</option><option value="계약 체결">계약 체결</option><option value="계약 무산">계약 무산</option><option value="계약 종료">계약 종료</option></select>
-              </div>
+              <div class="form-group"><label for="contractDate">계약 체결일:</label><input type="date" id="contractDate"></div>
+              <div class="form-group"><label for="contractAmount">계약 금액:</label><input type="number" id="contractAmount" step="1000"></div>
+              <div class="form-group" style="grid-column: 1 / -1;"><label for="contractSummary">계약 내용 요약:</label><textarea id="contractSummary"></textarea></div>
+              <div class="form-group"><label for="contractFileInfo">계약서 파일 정보:</label><input type="text" id="contractFileInfo" placeholder="예: 계약서_고객명.pdf"></div>
+              <div class="form-group" style="grid-column: 1 / -1;"><label for="contractReview">계약 리뷰:</label><textarea id="contractReview"></textarea></div>
             </div>
-            <button id="saveCustomerDetailsBtn">고객 및 상담 정보 저장</button>
-        </div>
-
-        <div id="contractInfoSection" class="hidden details-section contract-info">
-          <h3>계약 상세 정보</h3>
-          <div class="details-grid">
-            <div class="form-group"><label for="contractDate">계약 체결일:</label><input type="date" id="contractDate"></div>
-            <div class="form-group"><label for="contractAmount">계약 금액:</label><input type="number" id="contractAmount" step="1000"></div>
-            <div class="form-group" style="grid-column: 1 / -1;"><label for="contractSummary">계약 내용 요약:</label><textarea id="contractSummary"></textarea></div>
-            <div class="form-group"><label for="contractFileInfo">계약서 파일 정보:</label><input type="text" id="contractFileInfo" placeholder="예: 계약서_고객명.pdf"></div>
-            <div class="form-group" style="grid-column: 1 / -1;"><label for="contractReview">계약 리뷰:</label><textarea id="contractReview"></textarea></div>
+            <button id="saveContractBtn">계약 정보 저장</button>
           </div>
-          <button id="saveContractBtn">계약 정보 저장</button>
+          
+          </div>
+      </div>
+        
+      <div class="detail-log-pane">
+        <h3>상담 상세 기록</h3>
+        
+        <div class="log-entries" id="consultationLogs">
+          <p style="padding: 20px; text-align: center; color: #777; margin-top: 30px;">
+            고객을 선택하면 상담 기록이 표시됩니다.
+          </p>
         </div>
         
-        <div class="details-section">
-          <h3>상담 상세 기록</h3>
-          <div class="log-entries" id="consultationLogs"><p>기록 없음</p></div>
+        <div class="log-add-section">
           <h3>새 상담 기록 추가</h3>
-          <div class="form-group"><textarea id="newLogContent" placeholder="상담 내용을 입력하세요..." spellcheck="false"></textarea></div>
-          <button id="addLogBtn">기록 추가</button>
+          <div class="form-group">
+            <textarea id="newLogContent" placeholder="상담 내용을 입력하세요..." spellcheck="false"></textarea>
+          </div>
+          <button id="addLogBtn" style="width: 100%;">기록 추가</button>
         </div>
-
       </div>
-        </div>
-    </div>
-  </div>
 
-<script>
+    </div>
+  </div> <script>
   <?!= HtmlService.createTemplateFromFile('JavaScript').getRawContent() ?>
 </script>
 </body>
