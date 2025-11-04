@@ -1,3 +1,4 @@
+
 const loader = document.getElementById('loader');
 let currentAssignmentId = null; 
 
@@ -5,8 +6,6 @@ const PAGE_SIZE = 30;
 let currentFilters = {};
 let currentOffset = 0;
 let totalCustomerCount = 0;
-
-// [제거] BroadcastChannel
 
 function showLoader() { 
   loader.classList.remove('hidden'); 
@@ -165,11 +164,17 @@ function populateSelectOptions(config) {
   populate('desiredInitialCostType', optionsMap.desiredInitialCostType || []);
   populate('maintenanceServiceLevel', optionsMap.maintenanceServiceLevel || []);
   populate('customerStatus', optionsMap.customerStatus || []);
+  
+  // [수정] Task 2: '배정고객' 시트에서 contractStatus가 삭제됨
+  // populate('contractStatus', ...); // [삭제]
 }
 
-  function getStatusClass(consultStatus, contractStatus) {
-    if (contractStatus === '계약 체결') return 'contracted';
-    if (contractStatus === '계약 무산') return 'failed';
+  // [수정] Task 2: getStatusClass는 이제 '배정고객' 시트의 contractStatus를 참조하지 않음
+  // (추후 1:N 계약 목록의 '대표 상태'를 표시해야 한다면 이 로직은 복잡해짐)
+  // (일단은 'consultStatus'만 보도록 단순화)
+  function getStatusClass(consultStatus) {
+    // if (contractStatus === '계약 체결') return 'contracted'; // [삭제]
+    // if (contractStatus === '계약 무산') return 'failed'; // [삭제]
     if (consultStatus === '상담 완료') return 'completed';
     if (consultStatus === '상담 진행 중' || consultStatus === '연락 시도 중') return 'consulting';
     return '';
@@ -200,9 +205,11 @@ function populateSelectOptions(config) {
       }
 
       const consult = customer.consultationStatus || '미정';
-      const contract = customer.contractStatus || '미정';
-      const statusName = (contract !== '미해당' && contract !== '미정') ? contract : consult;
-      const statusClass = getStatusClass(consult, contract);
+      // [수정] Task 2: '배정고객' 시트에서 contractStatus가 삭제됨
+      // const contract = customer.contractStatus || '미정';
+      // const statusName = (contract !== '미해당' && contract !== '미정') ? contract : consult;
+      const statusName = consult; // [수정]
+      const statusClass = getStatusClass(consult); // [수정]
       
       const dbType = customer.dbType || '기타';
       
@@ -324,6 +331,55 @@ function renderConsultationLogs_Dynamic(logs, rootElement) {
   });
 }
 
+/**
+ * [신규] Task 8: 계약 이력 목록 렌더링
+ * @param {Array} contracts - 서버에서 받은 계약 목록
+ * @param {HTMLElement} panelElement - customerDetailPanel 요소
+ */
+function renderContractList(contracts, panelElement) {
+  const ul = panelElement.querySelector('#contractList');
+  if (!ul) {
+    console.error("Could not find #contractList ul in panelElement", panelElement);
+    return;
+  }
+
+  if (!contracts || contracts.length === 0) {
+    ul.innerHTML = '<li style="padding: 10px; text-align: center; color: #777;">(계약 이력이 없습니다.)</li>';
+    return;
+  }
+
+  ul.innerHTML = ''; // 기존 목록 초기화
+  
+  // (서버에서 이미 contractDate 최신순으로 정렬되어 옴)
+  contracts.forEach(contract => {
+    const li = document.createElement('li');
+    li.style.cssText = "padding: 10px 8px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; gap: 10px;";
+    
+    const dateStr = contract.contractDate ? contract.contractDate.split('T')[0] : '날짜 미정';
+    const car = contract.contractCarModel || '차종 미입력';
+    const amount = contract.contractAmount ? `${Number(contract.contractAmount).toLocaleString('ko-KR')} 원` : '금액 미입력';
+    const status = contract.contractStatus || '상태 미입력';
+
+    // TODO: 계약 상태(status)에 따라 배지 스타일 추가
+    const statusClass = ''; 
+    
+    li.innerHTML = `
+      <div style="flex: 1; display: flex; flex-direction: column;">
+        <span style="font-weight: bold; font-size: 1.05rem;">${escapeHtml(car)}</span>
+        <span style="font-size: 0.9rem; color: #555;">${escapeHtml(dateStr)} | ${escapeHtml(amount)}</span>
+      </div>
+      <div style="flex-shrink: 0;">
+         <span class="status-badge ${statusClass}" style="font-size: 0.9rem;">${escapeHtml(status)}</span>
+      </div>
+    `;
+    // TODO: 클릭 시 계약 상세 모달 띄우기 (추후 기능 확장)
+    // li.onclick = () => openContractDetailModal(contract.contractId);
+    
+    ul.appendChild(li);
+  });
+}
+
+
 function showSaveFeedback(buttonElement) {
   const originalText = buttonElement.textContent;
   buttonElement.textContent = "✅ 저장 완료";
@@ -345,7 +401,9 @@ function handleSavePhoneNumber(panelElement, assignmentId, saveBtn) {
   google.script.run
     .withSuccessHandler(result => {
       hideLoader();
-      displayAssignmentDetails_Dynamic(result, panelElement); // ★ 정보 패널(좌측)만 리프레시
+      // [수정] Task 4: result 객체에 contracts가 포함되어 있으므로, 
+      // displayAssignmentDetails_Dynamic가 계약 목록까지 새로고침합니다.
+      displayAssignmentDetails_Dynamic(result, panelElement); // ★ 정보 패널(좌측)만 리프시
       showSaveFeedback(saveBtn); 
       updateListItem(result.assignment);
     })
@@ -357,13 +415,18 @@ function handleSavePhoneNumber(panelElement, assignmentId, saveBtn) {
 function handleSaveCustomerDetails(panelElement, assignmentId, saveBtn) {
   if (!assignmentId) return;
 
+  // [수정] Task 5 및 UI 요청 1: 'contractStatus' 및 'consultationStatus' 필드 제거
   const detailFields = [
     'leadSource', 'customerType', 'gender', 'ageGroup', 'addressCity', 'addressDistrict',
     'incomeType', 'creditInfo', 
     'interestedCarModel', 'comparisonCarModel', 'ownedCarModel', 'carUsage', 'driverScope',
     'expectedContractTiming', 'desiredContractTerm', 'desiredInitialCostType',
     'maintenanceServiceLevel', 'salesCondition', 'isRepurchase', 'paymentMethod',
-    'customerStatus', 'consultationStatus', 'contractStatus','customerMemo'
+    'customerStatus', // [유지] 상단 그리드로 이동했으나 ID는 동일
+    // 'consultationStatus', // [삭제] UI에서 필드 제거됨
+    // 'contractStatus', // [삭제] 1:N 변경으로 제거됨
+    'customerMemo' // [유지] 상단 그리드의 '고객 메모' (목록 표시용)
+    // [참고] 하단의 'customerMemo_main' (textarea)는 이 함수로 저장되지 않음.
   ];
 
   const details = {};
@@ -374,6 +437,9 @@ function handleSaveCustomerDetails(panelElement, assignmentId, saveBtn) {
         if ('value' in element) {
              details[fieldId] = element.value.trim();
         }
+    } else {
+      // [수정] 삭제된 필드를 찾지 못해도 오류를 발생시키지 않고 경고만 띄움
+      console.warn(`[handleSaveCustomerDetails] Element with ID #${fieldId} not found.`);
     }
   });
 
@@ -383,7 +449,9 @@ function handleSaveCustomerDetails(panelElement, assignmentId, saveBtn) {
   google.script.run
     .withSuccessHandler(result => {
       hideLoader();
-      displayAssignmentDetails_Dynamic(result, panelElement); // ★ 정보 패널(좌측)만 리프레시
+      // [수정] Task 4: result 객체에 contracts가 포함되어 있으므로, 
+      // displayAssignmentDetails_Dynamic가 계약 목록까지 새로고침합니다.
+      displayAssignmentDetails_Dynamic(result, panelElement); // ★ 정보 패널(좌측)만 리프시
       showSaveFeedback(saveBtn);
       updateListItem(result.assignment); 
     })
@@ -391,25 +459,12 @@ function handleSaveCustomerDetails(panelElement, assignmentId, saveBtn) {
     .saveCustomerDetails(assignmentId, details); 
 }
 
-// ★ [수정] panelElement는 .detail-panel
+// ★ [삭제] Task 5: handleSaveContractDetails 함수 전체 삭제
+/*
 function handleSaveContractDetails(panelElement, assignmentId, saveBtn) {
-  if (!assignmentId) return;
-  const contractDetails = {};
-  const fields = ['contractDate', 'contractSummary', 'contractAmount', 'contractFileInfo', 'contractReview'];
-  fields.forEach(field => { contractDetails[field] = panelElement.querySelector('#' + field).value.trim(); });
-  contractDetails.contractAmount = contractDetails.contractAmount ? parseFloat(contractDetails.contractAmount) : null;
-
-  showLoader();
-  google.script.run
-    .withSuccessHandler(result => {
-      hideLoader();
-      displayAssignmentDetails_Dynamic(result, panelElement); // ★ 정보 패널(좌측)만 리프레시
-      showSaveFeedback(saveBtn); 
-      updateListItem(result.assignment);
-    })
-    .withFailureHandler(handleFailure)
-    .saveContractDetails(assignmentId, contractDetails);
+  // ... (기존 함수 내용) ...
 }
+*/
 
 // ★ [수정] panelElement는 이제 '.detail-log-pane'이 됩니다.
 function handleAddLog(panelElement, assignmentId) {
@@ -425,9 +480,15 @@ function handleAddLog(panelElement, assignmentId) {
   google.script.run
     .withSuccessHandler(result => { 
       hideLoader();
-      renderConsultationLogs_Dynamic(result.logs, panelElement); // ★ 로그 패널(우측)만 리프레시
+      renderConsultationLogs_Dynamic(result.logs, panelElement); // ★ 로그 패널(우측)만 리프시
       contentEl.value = ''; 
       updateListItem(result.assignment); // 목록의 '최종상담일' 업데이트
+      
+      // [신규] Task 4/8: 로그 추가 시 계약 목록도 함께 새로고침 (혹시 모를 상태 변경 대비)
+      const detailPanel = document.getElementById('customerDetailPanel');
+      if (detailPanel && result.contracts) {
+        renderContractList(result.contracts, detailPanel);
+      }
     })
     .withFailureHandler(handleFailure)
     .addConsultationLog(assignmentId, content);
@@ -443,11 +504,15 @@ function attachDetailPanelListeners() {
   // ★ 이벤트 위임을 사용하여 .detail-panel(.detail-info-pane + .detail-log-pane) 전체에 리스너 부착
   panelElement.addEventListener('click', e => {
     const target = e.target;
-    const targetId = target.id;
+    // [수정] 요청 14: 버튼이 h2 안에 있으므로 closest()로 버튼 자체를 찾음
+    const targetButton = e.target.closest('button');
+    const targetId = targetButton ? targetButton.id : target.id; 
+    
     const assignmentId = currentAssignmentId; 
 
     // 공통: assignmentId가 없으면 저장/추가류 동작 방지
-    if (!assignmentId && (targetId === 'savePhoneNumberBtn' || targetId === 'saveCustomerDetailsBtn' || targetId === 'saveContractBtn' || targetId === 'addLogBtn')) {
+    // [수정] Task 5: 'saveContractBtn' 제거
+    if (!assignmentId && (targetId === 'savePhoneNumberBtn' || targetId === 'saveCustomerDetailsBtn' || /* targetId === 'saveContractBtn' || */ targetId === 'addLogBtn')) {
       // '뒤로가기'는 예외
       if (targetId === 'backToListBtn') {
          // pass
@@ -472,24 +537,24 @@ function attachDetailPanelListeners() {
         
       // --- 정보 패널(.detail-info-pane) 버튼 ---
       case 'savePhoneNumberBtn':
-        handleSavePhoneNumber(panelElement, assignmentId, target);
+        handleSavePhoneNumber(panelElement, assignmentId, targetButton); // [수정] target -> targetButton
         break;
       
       case 'saveCustomerDetailsBtn':
-        handleSaveCustomerDetails(panelElement, assignmentId, target);
+        handleSaveCustomerDetails(panelElement, assignmentId, targetButton); // [수정] target -> targetButton
         break;
       
-      case 'saveContractBtn':
-        handleSaveContractDetails(panelElement, assignmentId, target);
-        break;
+      // [삭제] Task 5: 'saveContractBtn' 리스너 제거
 
+      // [수정] 요청 14: target.id -> targetId
       case 'toggleCustomerInfoBtn':
         e.preventDefault();
         // ★ panelElement 내부에서 #customerInfoGroup 찾기
         const infoGroup = panelElement.querySelector('#customerInfoGroup');
         if (infoGroup) {
           const isHidden = infoGroup.classList.toggle('hidden');
-          target.textContent = isHidden ? '상세 정보 보이기' : '상세 정보 숨기기';
+          // [수정] target -> targetButton
+          targetButton.textContent = isHidden ? '상세 정보 보이기' : '상세 정보 숨기기';
         }
         break; 
 
@@ -504,11 +569,89 @@ function attachDetailPanelListeners() {
     }
   });
 
-  // 계약 상태 <select> 리스너 (detail-info-pane 소속)
-  const contractStatusSelect = panelElement.querySelector('#contractStatus');
-  if (contractStatusSelect) {
-    contractStatusSelect.addEventListener('change', e => {
-        panelElement.querySelector('#contractInfoSection').classList.toggle('hidden', e.target.value !== '계약 체결');
+  // [삭제] Task 5: contractStatus <select> 리스너 (contractInfoSection이 삭제되었으므로)
+  
+  // --- [신규] Task 9: 신규 계약 모달 이벤트 리스너 ---
+  // [수정] 요청 14: openModalBtn은 이제 panelElement(상세 패널) 기준이 아닌
+  // document(문서 전체) 기준으로 찾아야 함 (h2 안에 있으므로)
+  const addContractModal = document.getElementById('addContractModal');
+  const openModalBtn = document.getElementById('openAddContractModalBtn'); // [수정]
+  const cancelModalBtn = document.getElementById('cancelAddContractBtn');
+  const saveModalBtn = document.getElementById('saveNewContractBtn');
+
+  const clearContractModal = () => {
+      addContractModal.querySelector('#modalContractDate').value = '';
+      addContractModal.querySelector('#modalContractCarModel').value = '';
+      addContractModal.querySelector('#modalContractAmount').value = '';
+      addContractModal.querySelector('#modalContractTerm').value = '';
+      addContractModal.querySelector('#modalContractStatus').value = '진행중'; // 기본값
+      addContractModal.querySelector('#modalContractSummary').value = '';
+  };
+
+  // 모달 열기
+  if (openModalBtn) {
+    // [수정] 요청 14: 리스너 부착 방식 변경 (이벤트 위임 사용 안함)
+    openModalBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation(); // h2 클릭 이벤트 방지
+      if (!currentAssignmentId) {
+        showErrorModal("고객이 선택되지 않았습니다.");
+        return;
+      }
+      clearContractModal(); // 모달 초기화
+      addContractModal.classList.remove('hidden');
+    });
+  }
+
+  // 모달 취소
+  if (cancelModalBtn) {
+    cancelModalBtn.addEventListener('click', () => {
+      addContractModal.classList.add('hidden');
+    });
+  }
+
+  // 모달 저장
+  if (saveModalBtn) {
+    saveModalBtn.addEventListener('click', () => {
+      if (!currentAssignmentId) {
+        showErrorModal("저장할 고객 ID가 없습니다. (오류)");
+        return;
+      }
+
+      // 1. 데이터 수집
+      const contractData = {
+        contractDate: addContractModal.querySelector('#modalContractDate').value,
+        contractCarModel: addContractModal.querySelector('#modalContractCarModel').value.trim(),
+        contractAmount: addContractModal.querySelector('#modalContractAmount').value,
+        contractTerm: addContractModal.querySelector('#modalContractTerm').value.trim(),
+        contractStatus: addContractModal.querySelector('#modalContractStatus').value,
+        contractSummary: addContractModal.querySelector('#modalContractSummary').value.trim()
+      };
+
+      // 2. 유효성 검사 (간단)
+      if (!contractData.contractDate || !contractData.contractCarModel) {
+        showErrorModal("계약 체결일과 계약 차종은 필수입니다.");
+        return;
+      }
+
+      console.log("Saving new contract:", currentAssignmentId, contractData);
+      showLoader();
+
+      // 3. 서버 호출 (google.script.run.addNewContract)
+      google.script.run
+        .withSuccessHandler(newContractList => {
+          hideLoader();
+          addContractModal.classList.add('hidden'); // 모달 닫기
+          
+          // 4. 성공 시 계약 목록 새로고침
+          const detailPanel = document.getElementById('customerDetailPanel');
+          renderContractList(newContractList, detailPanel);
+          
+          // (선택) 목록의 고객 상태도 새로고침 (예: 재계약 고객)
+          // (일단 이 기능은 보류)
+        })
+        .withFailureHandler(handleFailure)
+        .addNewContract(currentAssignmentId, contractData);
     });
   }
 }
@@ -538,6 +681,9 @@ function selectCustomer(assignmentId) {
         const newLogContentEl = logPanel.querySelector('#newLogContent');
         if (newLogContentEl) newLogContentEl.value = '';
       }
+      
+      // [신규] Task 8: 계약 이력 패널(좌측) 채우기
+      renderContractList(result.contracts, panelElement);
 
       panelElement.classList.remove('hidden'); // ★ 상세 뷰 표시
 
@@ -568,6 +714,7 @@ function selectCustomer(assignmentId) {
       dateFrom: document.getElementById('filterAssignmentDateFrom').value,
       dateTo: document.getElementById('filterAssignmentDateTo').value,
       consultStatus: document.getElementById('filterConsultationStatus').value,
+      // [수정] Task 2: contractStatus 필터는 서버에서 무시되지만, 값은 일단 전송
       contractStatus: document.getElementById('filterContractStatus').value,
       dbType: document.getElementById('filterDbType').value
       };
@@ -639,6 +786,16 @@ document.addEventListener('DOMContentLoaded', () => {
       if (dynamicPanel && !dynamicPanel.classList.contains('hidden')) { 
         dynamicPanel.querySelector('#backToListBtn').click();
       }
+      
+      // [신규] Task 9: 모달도 닫기
+      const addContractModal = document.getElementById('addContractModal');
+      if (addContractModal && !addContractModal.classList.contains('hidden')) {
+        addContractModal.querySelector('#cancelAddContractBtn').click();
+      }
+      const addCustomerModal = document.getElementById('addCustomerModal');
+      if (addCustomerModal && !addCustomerModal.classList.contains('hidden')) {
+        addCustomerModal.querySelector('#cancelAddCustomerBtn').click();
+      }
     }
     
     if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
@@ -708,7 +865,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('filterSearchTerm').value = '';
     document.getElementById('filterDbType').value = '';
     document.getElementById('filterConsultationStatus').value = '';
-    document.getElementById('filterContractStatus').value = '';
+    document.getElementById('filterContractStatus').value = ''; // [수정] Task 2: 이 필터는 초기화되지만, 서버는 무시함
     const dateFromInput = document.getElementById('filterAssignmentDateFrom');
     const today = new Date();
     dateFromInput.value = new Date(today.setMonth(today.getMonth() - 3)).toISOString().split('T')[0];
@@ -798,6 +955,7 @@ document.addEventListener('DOMContentLoaded', () => {
 function loadDistricts(selectedCity, valueToSelect) {
   // ★ [수정] #customerDetailPanel 내부에서 #addressDistrict 찾기
   const districtSelect = document.getElementById('addressDistrict');
+  // [수정] index.html에서 addressDistrict 필드가 주석 처리(제거)되었을 수 있음
   if (!districtSelect) return;
 
   if (!selectedCity) {
@@ -852,7 +1010,8 @@ function attachAddressListeners() {
 /**
  * [수정됨] 서버에서 받은 상세 데이터를 상세 정보 패널(좌측)의 각 UI 요소에 표시합니다.
  * (로그 렌더링 로직은 제거됨 -> selectCustomer로 이동)
- * @param {object} result - 서버의 getAssignmentDetails 함수가 반환하는 객체 { assignment: {}, logs: [] }
+ * (계약 목록 렌더링 로직도 제거됨 -> selectCustomer로 이동)
+ * @param {object} result - 서버의 getAssignmentDetails 함수가 반환하는 객체 { assignment: {}, logs: [], contracts: [] }
  * @param {HTMLElement} panelElement - 상세 정보 패널 요소 (customerDetailPanel)
  */
 function displayAssignmentDetails_Dynamic(result, panelElement) {
@@ -889,7 +1048,8 @@ function displayAssignmentDetails_Dynamic(result, panelElement) {
 
   // --- 1. 기본 정보 ---
   setElementValue('detailAssignmentId', assignment.assignmentId);
-  setElementValue('detailCustomerNameSpan', assignment.customerName); 
+  // [삭제] 요청 2: '고객명' span 삭제됨
+  // setElementValue('detailCustomerNameSpan', assignment.customerName); 
   setElementValue('detailCustomerPhoneNumber', assignment.customerPhoneNumber ? formatPhoneNumber_Client(assignment.customerPhoneNumber) : ''); 
   setElementValue('detailDbType', assignment.dbType); 
   const assignDateStr = assignment.assignmentDate ? assignment.assignmentDate.split('T')[0] : '';
@@ -927,35 +1087,27 @@ function displayAssignmentDetails_Dynamic(result, panelElement) {
   setElementValue('paymentMethod', assignment.paymentMethod);
 
   // --- 4. 상담 / 계약 상태 ---
+  // [수정] 요청 2: '고객 상태'는 상단 그리드로 이동했으나 ID는 동일함
   setElementValue('customerStatus', assignment.customerStatus);
-  setElementValue('consultationStatus', assignment.consultationStatus);
-  setElementValue('contractStatus', assignment.contractStatus);
-  // ▼▼▼ [신규] 고객 메모 값 설정 ▼▼▼
+  // [삭제] 요청 1: '상담 상태' 필드 삭제됨
+  // setElementValue('consultationStatus', assignment.consultationStatus);
+  // [삭제] 1:N 변경으로 '계약 상태' 필드 삭제됨
+  // setElementValue('contractStatus', assignment.contractStatus);
+  
+  // ▼▼▼ [수정] 상단 '고객 메모' (목록 표시용) 값 설정 ▼▼▼
   setElementValue('customerMemo', assignment.customerMemo);
   
-  const contractSection = panelElement.querySelector('#contractInfoSection');
-  if (contractSection) {
-    contractSection.classList.toggle('hidden', assignment.contractStatus !== '계약 체결');
-  }
+  // [삭제] Task 7: contractInfoSection이 삭제됨
 
-  // --- 5. 계약 상세 정보 ---
-  if (assignment.contractStatus === '계약 체결') {
-    setElementValue('contractDate', assignment.contractDate);
-    setElementValue('contractAmount', assignment.contractAmount);
-    setElementValue('contractSummary', assignment.contractSummary);
-    setElementValue('contractFileInfo', assignment.contractFileInfo);
-    setElementValue('contractReview', assignment.contractReview);
-  } else {
-     const contractFields = ['contractDate', 'contractAmount', 'contractSummary', 'contractFileInfo', 'contractReview'];
-     contractFields.forEach(id => setElementValue(id, ''));
-  }
-
+  // --- 5. [삭제] Task 7: 계약 상세 정보 (단일) 로직 전체 삭제 ---
+  
   // --- 6. [제거] 상담 기록 렌더링 (selectCustomer에서 처리) ---
   // --- 7. [제거] 새 상담 기록 입력 필드 초기화 (selectCustomer에서 처리) ---
+  // --- 8. [신규] Task 8: 계약 목록 렌더링 (selectCustomer에서 처리) ---
 
-  // --- 8. 고객 이름 업데이트 (패널 상단 제목) ---
-  const detailTitle = panelElement.querySelector('#detailCustomerName');
-  if (detailTitle) {
-      detailTitle.textContent = assignment.customerName ? `${assignment.customerName} 고객 상세 정보` : '고객 상세 정보';
+  // [수정] 요청 14: h2 자체가 아닌, 내부의 span(#detailCustomerNameText)의 텍스트를 변경
+  const detailTitleText = panelElement.querySelector('#detailCustomerNameText');
+  if (detailTitleText) {
+      detailTitleText.textContent = assignment.customerName ? `${assignment.customerName} 고객 상세 정보` : '고객 상세 정보';
   }
 }
