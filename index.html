@@ -128,7 +128,7 @@
       padding: 8px 12px; /* 패딩 줄임 (12px 15px -> 8px 12px) */
       border-radius: 5px; 
       cursor: pointer; 
-      transition: background-color 0.3s ease; 
+      transition: background-color: 0.3s ease; 
       border-left: 4px solid transparent; 
       /* line-height: 1.5; */ /* 제거 */
 
@@ -156,9 +156,15 @@
       box-sizing: border-box;
     }
     
+    /* [신규] 요청 4: 단락 제목(h3) 색상 변경 */
+    .detail-info-pane h3 {
+      color: #0056b3; 
+    }
+    
     /* 상세 뷰 - 우측 패널 (상담 기록) */
     .detail-log-pane {
-      flex: 0 0 450px; /* 우측 너비 고정 */
+      /* [수정] 요청 11: 너비 450px -> 600px */
+      flex: 0 0 600px; 
       height: 100%;
       display: flex;
       flex-direction: column;
@@ -169,6 +175,11 @@
       background-color: #fdfdfd;
       overflow: hidden; /* 내부 스크롤을 위해 */
     }
+    /* [신규] 요청 4: 단락 제목(h3) 색상 변경 */
+    .detail-log-pane h3 {
+      color: #0056b3; 
+    }
+    
     .detail-log-pane .log-entries {
       flex-grow: 1; /* 상담 목록이 남은 공간 차지 */
       overflow-y: auto; /* ★ [핵심] 상담 목록만 스크롤 */
@@ -195,15 +206,8 @@
     .info-item strong { display: inline-block; width: 80px; color: #555; flex-shrink: 0; }
     .info-input { border: 1px solid #ccc; padding: 5px; border-radius: 4px; font-size: 1rem; }
 
-    /* ▼▼▼ [신규] 기본 정보 전용 그리드 CSS 추가 ▼▼▼ */
-    .basic-info-grid {
-      display: grid;
-      /* 화면 크기에 맞춰 250px이 2~3개 들어가도록 설정 */
-      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-      gap: 5px 15px; /* 세로 5px, 가로 15px 갭 */
-      margin-bottom: 10px; /* 아래쪽 여백 */
-    }
-    /* ▲▲▲ [신규] ▲▲▲ */
+    /* [삭제] 요청 8: .basic-info-grid CSS 삭제 */
+    
     .back-link { display: inline-block; margin-bottom: 15px; color: #007bff; text-decoration: none; font-weight: bold; font-size: 1.05rem; }
     .back-link:hover { text-decoration: underline; }
     .form-group { margin-bottom: 8px; }
@@ -215,18 +219,23 @@
     button:disabled { background-color: #ccc; cursor: not-allowed; }
     button.secondary { background-color: #6c757d; }
     button.secondary:hover { background-color: #5a6268; }
+    
+    /* [수정] 요청 13: 단락 간 여백(padding/margin) 8px로 축소 */
     .details-section { 
       border-top: 1px solid #eee; 
-      margin-top: 15px; /* 20px -> 15px */
-      padding-top: 15px; /* 15px 유지 */
+      margin-top: 8px;
+      padding-top: 8px;
     }
-    /* ▼▼▼ [수정] 그리드 자체의 최소 크기를 300px 정도로 늘립니다. (라벨+입력란) ▼▼▼ */
+    
+    /* [수정] 요청 13: 그리드 항목 크기(300px) 고정, 여백(gap)은 고정하되, 항목 간 자동 배분(space-between) */
     .details-grid { 
       display: grid; 
-      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); /* 210px -> 300px */
-      gap: 10px 15px; /* 세로 10px, 가로 15px 갭 */
+      grid-template-columns: repeat(auto-fit, 300px); /* 300px 고정 크기 */
+      gap: 10px 15px; 
       margin-bottom: 10px; 
+      justify-content: space-between; /* [핵심] 항목 사이의 여백을 자동으로 배분 */
     }
+    
     /* ▼▼▼ [신규/수정] 그리드 내의 폼 그룹을 Flex(가로) 레이아웃으로 변경 ▼▼▼ */
     .details-grid .form-group {
       display: flex;
@@ -235,6 +244,38 @@
       gap: 8px;
       margin-bottom: 0; /* 그리드 갭이 여백을 대신함 */
     }
+    
+    /* [수정] 요청 10: .info-item (span 항목) 스타일 정의 */
+    .details-grid .info-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.9rem;
+      /* padding: 6px 8px; */ /* [삭제] 래퍼 패딩 제거 (정렬 문제) */
+      box-sizing: border-box; 
+      min-height: 34px; 
+    }
+    .details-grid .info-item strong {
+      flex: 0 0 90px; /* details-grid의 label 너비와 동일하게 */
+      margin-bottom: 0;
+      font-weight: bold;
+      color: #555;
+    }
+    .details-grid .info-item span {
+      flex: 1 1 auto;
+      word-break: break-all; /* ID 등이 길 경우 */
+      font-size: 1rem; /* input/select 글꼴 크기와 맞춤 */
+      color: #333;
+      /* [신규] 요청 10: input/select와 동일하게 패딩 추가 */
+      padding: 6px 8px; 
+      box-sizing: border-box;
+      /* (선택) span도 input처럼 보이게 */
+      /* background-color: #f4f4f4; */
+      /* border: 1px solid #eee; */
+      /* border-radius: 4px; */
+    }
+    
+    
     /* ▼▼▼ [신규/수정] 그리드 내 폼 라벨의 너비 고정 ▼▼▼ */
     .details-grid .form-group label {
       flex: 0 0 90px; /* 항목 이름(라벨) 너비를 90px로 고정 */
@@ -251,35 +292,9 @@
     }
     .contract-info { background-color: #e9f5ff; padding: 15px; border-radius: 5px; }
     .contract-info h3 { color: #004085; border-bottom-color: #b8daff; }
-    /* ▼▼▼ [신규] 연락처/경로/메모를 묶는 3열 그리드 ▼▼▼ */
-    /* ▼▼▼ [신규] 연락처/경로/메모를 묶는 3열 그리드 ▼▼▼ */
-    .contact-info-grid {
-      display: grid;
-      /* 3개의 유연한 컬럼 (연락처/경로/메모) */
-      grid-template-columns: minmax(250px, 1fr) minmax(200px, 1fr) minmax(300px, 1.5fr);
-      gap: 10px 15px;
-      align-items: center;
-      margin-top: 10px;
-    }
-    /* 이 그리드 내부의 .form-group은 라벨과 인풋을 가로로 배치 */
-    .contact-info-grid .form-group {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      margin-bottom: 0; /* 갭이 있으므로 margin 제거 */
-    }
-    .contact-info-grid .form-group label {
-      flex: 0 0 80px; /* 라벨 너비 80px 고정 */
-      margin-bottom: 0;
-      font-size: 0.9rem;
-    }
-    .contact-info-grid .form-group .input-button-group,
-    .contact-info-grid .form-group .info-input {
-      flex-grow: 1;
-      width: auto; /* width 100% 해제 */
-    }
     
-
+    /* [삭제] 요청 8: .contact-info-grid CSS 삭제 */
+    
     .list-item-status { font-size: 0.9em; color: #555; }
     .filter-group { display: grid; grid-template-columns: 1fr; gap: 10px; }
     .filter-top-row { display: flex; flex-direction: column; gap: 10px; margin-bottom: 15px; }
@@ -308,6 +323,7 @@
     .hidden,
     #loader.hidden, 
     #addCustomerModal.hidden,
+    #addContractModal.hidden, /* [신규] Task 6 */
     #contractInfoSection.hidden,
     #customerInfoGroup.hidden { 
       display: none !important; 
@@ -341,6 +357,13 @@
         max-height: 40vh; 
         overflow-y: auto;
       }
+      /* [신규] 반응형일 때 contact-info-grid 2열로 변경 */
+      /* [수정] .contact-info-grid -> .details-grid */
+      .details-grid {
+        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+        /* [수정] 요청 13: 반응형에서는 space-between 대신 기본(stretch)으로 */
+        justify-content: stretch; 
+      }
     }
 
     /* 스켈레톤, 플래시 등 */
@@ -354,26 +377,36 @@
     @keyframes flash-green { 0% { background-color: #d4edda; } 100% { background-color: #f9f9f9; } }
     .form-group-inline label { margin-bottom: 3px; }
     .input-button-group { display: flex; align-items: center; gap: 8px; }
-    /* ▼▼▼ [수정] 연락처 저장 버튼/인풋 높이 강제 조절 ▼▼▼ */
+    
+    /* [수정] 요청 1: '번호 저장' 버튼 높이 수정 */
     .input-button-group button {
-       padding: 8px 12px;
+       padding: 6px 12px; /* [수정] 8px -> 6px (input과 동일하게) */
        font-size: 0.9rem;
-       height: auto; /* 고정 높이 제거 */
+       height: auto; 
        min-height: 0;
-       line-height: 1.2; /* 버튼 높이 축소 */
+       line-height: 1.2; 
+       flex-shrink: 0; /* [신규] 요청 9: 버튼 너비 축소 방지 */
     }
     .input-button-group input {
       height: auto;
       min-height: 0;
-      padding: 6px 8px; /* 폼 높이와 동일하게 */
+      padding: 6px 8px; 
       font-size: 0.9rem;
     }
-    /* ▲▲▲ CSS 수정 완료 ▲▲▲ */
+    
     .detail-info-pane .details-section:first-child .form-group,
     .detail-info-pane .details-section:first-child .form-group-inline { max-width: 450px; }
     .details-section h3 { display: flex; justify-content: space-between; align-items: center; }
     .toggle-section-btn { font-size: 0.85rem; padding: 3px 10px; background-color: #6c757d; min-height: auto; height: auto; line-height: 1.5; }
     .toggle-section-btn:hover { background-color: #5a6268; }
+
+    /* [삭제] 요청 13: 이전의 잘못된 :first-child 규칙 삭제 */
+
+    /* [수정] 요청 13: 숨겨진 단락들의 여백을 줄이고 선(border-top)은 유지 */
+    #customerInfoGroup > .details-section {
+      margin-top: 8px; /* 10px -> 8px */
+      padding-top: 8px; /* 10px -> 8px */
+    }
 
     /* [신규] 1줄 리스트 아이템 스타일 */
     .li-item {
@@ -447,6 +480,46 @@
     </div>
   </div>
 
+  <div id="addContractModal" class="modal-overlay hidden">
+    <div class="modal-content">
+      <h2>신규 계약 추가</h2>
+      
+      <div class="form-group">
+        <label for="modalContractDate">계약 체결일:</label>
+        <input type="date" id="modalContractDate">
+      </div>
+      <div class="form-group">
+        <label for="modalContractCarModel">계약 차종:</label>
+        <input type="text" id="modalContractCarModel" placeholder="예: K5 2.0 LPI">
+      </div>
+      <div class="form-group">
+        <label for="modalContractAmount">월 렌탈료 (숫자만):</label>
+        <input type="number" id="modalContractAmount" placeholder="예: 550000">
+      </div>
+      <div class="form-group">
+        <label for="modalContractTerm">계약 기간 (개월):</label>
+        <input type="text" id="modalContractTerm" placeholder="예: 48개월">
+      </div>
+      <div class="form-group">
+        <label for="modalContractStatus">계약 상태:</label>
+        <select id="modalContractStatus">
+          <option value="심사중">심사중</option>
+          <option value="진행중">진행중</option>
+          <option value="만료">만료</option>
+          <option value="중도해지">중도해지</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label for="modalContractSummary">계약 특이사항 메모:</label>
+        <textarea id="modalContractSummary" rows="3"></textarea>
+      </div>
+      
+      <div class="modal-actions">
+        <button id="cancelAddContractBtn" class="secondary">취소</button>
+        <button id="saveNewContractBtn">계약 저장</button>
+      </div>
+    </div>
+  </div>
   <div class="container">
         
     <div class="list-panel" id="listPanel">
@@ -502,50 +575,53 @@
       
       <div class="detail-info-pane">
         <a href="#" id="backToListBtn" class="back-link">&larr; 목록으로 돌아가기</a>
-        <h2 id="detailCustomerName">고객 상세 정보</h2>
+        
+        <h2 id="detailCustomerName" style="display: flex; justify-content: space-between; align-items: center;">
+          <span id="detailCustomerNameText">고객 상세 정보</span> <button id="toggleCustomerInfoBtn" class="toggle-section-btn secondary">상세 정보 숨기기</button>
+        </h2>
         
         <div id="assignmentDetails"> 
+        
           <div class="details-section" style="border-top: none; margin-top: 0; padding-top: 0;">
-            <h3>고객 기본 정보</h3> 
+            <!--><h3>고객 기본 정보</h3><--> 
             
-            <div class="basic-info-grid">
-              <div class="info-item"> 
-                  <strong>고객명:</strong> <span id="detailCustomerNameSpan"></span> </div>
-                <div class="info-item">
-                  <strong>배정 ID:</strong> <span id="detailAssignmentId"></span>
-                </div>
-                <div class="info-item">
-                  <strong>DB 유형:</strong> <span id="detailDbType"></span>
-                </div>
-                <div class="info-item">
-                  <strong>배정일:</strong> <span id="detailAssignmentDate"></span>
-                </div>
-            </div>
-            <div class="contact-info-grid">
+            <div class="details-grid"> 
               
-              <div class="form-group">
-                <label for="detailCustomerPhoneNumber"><strong>연락처:</strong></label>
-                <div class="input-button-group">
-                  <input type="tel" id="detailCustomerPhoneNumber" class="info-input"> 
-                  <button id="savePhoneNumberBtn">번호 저장</button>
-                </div>
+              <div class="info-item">
+                <strong>배정 ID:</strong> <span id="detailAssignmentId"></span>
+              </div>
+              <div class="info-item">
+                <strong>DB 유형:</strong> <span id="detailDbType"></span>
+              </div>
+              <div class="info-item">
+                <strong>배정일:</strong> <span id="detailAssignmentDate"></span>
               </div>
               
               <div class="form-group">
-                <label for="leadSource"><strong>유입 경로:</strong></label>
-                <select id="leadSource" class="info-input"> <option value="">-- 선택 --</option>
+                <label for="leadSource">유입 경로:</label>
+                <select id="leadSource"> <option value="">-- 선택 --</option>
                 </select>
               </div>
 
               <div class="form-group">
-                <label for="customerMemo"><strong>고객 메모:</strong></label>
-                <input type="text" id="customerMemo" class="info-input" placeholder="목록에 표시될 간단한 메모...">
+                <label for="detailCustomerPhoneNumber">연락처:</label>
+                <div class="input-button-group">
+                  <input type="tel" id="detailCustomerPhoneNumber"> 
+                  <button id="savePhoneNumberBtn">저장</button>
+                </div>
               </div>
 
-            </div>
-            </div>
-          
-          <button id="toggleCustomerInfoBtn" class="toggle-section-btn secondary" style="margin-right: 10px;">상세 정보 숨기기</button>
+              <div class="form-group">
+                <label for="customerStatus">고객 상태:</label>
+                <select id="customerStatus"><option value="">-- 선택 --</option></select> 
+              </div>
+              
+              <div class="form-group">
+                <label for="customerMemo">고객 메모:</label>
+                <input type="text" id="customerMemo" placeholder="목록에 표시될 간단한 메모...">
+              </div>
+
+            </div> </div>
           
           <div id="customerInfoGroup">
             <div class="details-section"> 
@@ -567,12 +643,6 @@
                   <label for="addressCity">주소 (시/도):</label>
                   <select id="addressCity"><option value="">-- 선택 --</option></select> 
                 </div>
-                <!--
-                <div class="form-group">
-                  <label for="addressDistrict">주소 (시/군/구):</label>
-                  <select id="addressDistrict"><option value="">-- 선택 --</option></select> 
-                </div>
-                -->
                 <div class="form-group">
                   <label for="incomeType">소득 구분:</label>
                   <select id="incomeType"><option value="">-- 선택 --</option></select> 
@@ -622,40 +692,19 @@
           </div>
 
           <div class="details-section">
-              <h3>상담 / 계약 상태</h3>
-              <div class="details-grid">
-                <div class="form-group">
-                  <label for="customerStatus">고객 상태:</label>
-                  <select id="customerStatus"><option value="">-- 선택 --</option></select> </div>
-                <div class="form-group">
-                  <label for="consultationStatus">상담 상태:</label>
-                  <select id="consultationStatus"></select>
-                </div>
-                <div class="form-group">
-                  <label for="contractStatus">계약 상태:</label>
-                  <select id="contractStatus"></select>
-                </div>
-              </div>
-              
-              <div class="form-group" style="margin-top: 15px;">
-                <label for="customerMemo">고객 메모:</label>
-                <textarea id="customerMemo" rows="3" placeholder="목록에 표시될 간단한 메모..."></textarea>
-              </div>
-              <button id="saveCustomerDetailsBtn">고객 및 상담 정보 저장</button>
-          </div>
-
-          <div id="contractInfoSection" class="hidden details-section contract-info">
-            <h3>계약 상세 정보</h3>
-            <div class="details-grid">
-              <div class="form-group"><label for="contractDate">계약 체결일:</label><input type="date" id="contractDate"></div>
-              <div class="form-group"><label for="contractAmount">계약 금액:</label><input type="number" id="contractAmount" step="1000"></div>
-              <div class="form-group" style="grid-column: 1 / -1;"><label for="contractSummary">계약 내용 요약:</label><textarea id="contractSummary"></textarea></div>
-              <div class="form-group"><label for="contractFileInfo">계약서 파일 정보:</label><input type="text" id="contractFileInfo" placeholder="예: 계약서_고객명.pdf"></div>
-              <div class="form-group" style="grid-column: 1 / -1;"><label for="contractReview">계약 리뷰:</label><textarea id="contractReview"></textarea></div>
-            </div>
-            <button id="saveContractBtn">계약 정보 저장</button>
+              <button id="saveCustomerDetailsBtn" style="margin-top: 10px;">고객 정보 저장</button>
           </div>
           
+          <div class="details-section contract-history-section" style="background-color: #f9f9f9; padding: 15px; border-radius: 5px;">
+            <h3 style="display: flex; justify-content: space-between; align-items: center;">
+              계약 이력
+              <button id="openAddContractModalBtn" class="secondary" style="font-size: 0.9rem; padding: 5px 10px; min-height: auto; height: auto; line-height: 1.5;">+ 신규 계약 추가</button>
+            </h3>
+            <ul id="contractList" style="list-style: none; padding: 0; margin-top: 10px; max-height: 300px; overflow-y: auto; border-top: 1px solid #eee;">
+              <li style="padding: 10px; text-align: center; color: #777;">(계약 이력이 없습니다.)</li>
+            </ul>
+          </div>
+
           </div>
       </div>
         
