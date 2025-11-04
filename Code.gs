@@ -779,7 +779,9 @@ function saveCustomerDetails(assignmentId, details) {
     // 상담/관리 상태
     'customerStatus', 'consultationStatus', 'contractStatus',
     // 연락처 (별도 저장 버튼이 있지만, 여기서도 허용 가능)
-    'customerPhoneNumber'
+    'customerPhoneNumber',
+    // ▼▼▼ [신규] 고객 메모 필드 추가 ▼▼▼
+    'customerMemo'
   ];
   const sanitizedDetails = {};
   EDITABLE_FIELDS.forEach(key => {
