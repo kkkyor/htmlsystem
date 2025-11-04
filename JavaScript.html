@@ -180,10 +180,10 @@ function populateSelectOptions(config) {
       li.tabIndex = 0;
       li.dataset.assignmentId = customer.assignmentId;
       
-      const assignDate = (customer.assignmentDate && typeof customer.assignmentDate === 'string') ? customer.assignmentDate.split('T')[0] : '날짜 없음';
+      // --- 데이터 포맷팅 ---
       const phone = customer.customerPhoneNumber ? formatPhoneNumber_Client(customer.customerPhoneNumber) : '번호 없음';
       
-      let lastLogText = '상담 기록 없음';
+      let lastLogText = '기록 없음'; // 최종 로그 *시간*
       if (customer.lastLogDate) {
       try {
         const logDate = new Date(customer.lastLogDate);
@@ -192,30 +192,48 @@ function populateSelectOptions(config) {
             month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit'
           });
         } else {
-          lastLogText = '최종: (날짜 오류)';
+          lastLogText = '기록 (날짜오류)';
         }
       } catch (e) {
-        lastLogText = '최종: (날짜 변환 오류)';
+        lastLogText = '기록 (변환오류)';
       }
       }
 
       const consult = customer.consultationStatus || '미정';
       const contract = customer.contractStatus || '미정';
+      const statusName = (contract !== '미해당' && contract !== '미정') ? contract : consult;
       const statusClass = getStatusClass(consult, contract);
       
+      const dbType = customer.dbType || '기타';
+      
+      // ▼▼▼ [수정] '관심 차종' 대신 '고객 메모' 데이터 추출 ▼▼▼
+      const memo = customer.customerMemo || '...'; // '메모'가 없으면 '...' 표시
+      
+      // ▼▼▼ [수정] HTML 구조 변경 (model -> memo) ▼▼▼
       li.innerHTML = `
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-        <strong style="font-size: 1.15em; color: #004085;">${escapeHtml(customer.customerName)}</strong>
-        <span class="status-badge ${statusClass}">${contract !== '미해당' ? contract : consult}</span>
-      </div>
-      <div style="font-size: 0.95em; color: #333; margin-bottom: 8px;">
-        <span>${phone}</span>
-        <span style="float: right; font-size: 0.9em; color: #555;">(인입: ${assignDate} / ${customer.dbType || '기타'})</span>
-      </div>
-      <div class="list-item-status" style="border-top: 1px solid #eee; padding-top: 8px; font-size: 0.9em; color: #0056b3; font-weight: bold;">
-        ${lastLogText}
-      </div>
+        <span class="li-item dbtype" title="${escapeHtml(dbType)}">
+          ${escapeHtml(dbType)}
+        </span>
+        <span class="li-item status">
+          <span class="status-badge ${statusClass}">${escapeHtml(statusName)}</span>
+        </span>
+        <span class="li-item name" title="${escapeHtml(customer.customerName)}">
+          ${escapeHtml(customer.customerName)}
+        </span>
+        <span class="li-item phone" title="${escapeHtml(phone)}">
+          ${escapeHtml(phone)}
+        </span>
+        
+        <span class="li-item memo" title="${escapeHtml(memo)}">
+          ${escapeHtml(memo)}
+        </span>
+        
+        <span class="li-item log" title="${escapeHtml(lastLogText)}">
+          ${escapeHtml(lastLogText)}
+        </span>
       `;
+      // ▲▲▲ [수정] ▲▲▲
+      
       return li;
   }
 
@@ -345,7 +363,7 @@ function handleSaveCustomerDetails(panelElement, assignmentId, saveBtn) {
     'interestedCarModel', 'comparisonCarModel', 'ownedCarModel', 'carUsage', 'driverScope',
     'expectedContractTiming', 'desiredContractTerm', 'desiredInitialCostType',
     'maintenanceServiceLevel', 'salesCondition', 'isRepurchase', 'paymentMethod',
-    'customerStatus', 'consultationStatus', 'contractStatus'
+    'customerStatus', 'consultationStatus', 'contractStatus','customerMemo'
   ];
 
   const details = {};
@@ -912,7 +930,9 @@ function displayAssignmentDetails_Dynamic(result, panelElement) {
   setElementValue('customerStatus', assignment.customerStatus);
   setElementValue('consultationStatus', assignment.consultationStatus);
   setElementValue('contractStatus', assignment.contractStatus);
-
+  // ▼▼▼ [신규] 고객 메모 값 설정 ▼▼▼
+  setElementValue('customerMemo', assignment.customerMemo);
+  
   const contractSection = panelElement.querySelector('#contractInfoSection');
   if (contractSection) {
     contractSection.classList.toggle('hidden', assignment.contractStatus !== '계약 체결');
