@@ -147,6 +147,14 @@ function populateSelectOptions(config) {
         option.textContent = optionValue;
         selectElement.appendChild(option);
       });
+
+      // ▼▼▼ [신규] 옵션 채운 후 초기 색상 설정 ▼▼▼
+      if (selectElement.value === "") {
+        selectElement.classList.add('placeholder');
+      } else {
+        selectElement.classList.remove('placeholder');
+      }
+
     }
   };
 
@@ -159,11 +167,13 @@ function populateSelectOptions(config) {
   populate('incomeType', optionsMap.incomeType || []);
   populate('creditInfo', optionsMap.creditInfo || []);
   populate('carUsage', optionsMap.carUsage || []);
+  populate('drivingDistance', optionsMap.drivingDistance || []);
   populate('expectedContractTiming', optionsMap.expectedContractTiming || []);
   populate('desiredContractTerm', optionsMap.desiredContractTerm || []);
   populate('desiredInitialCostType', optionsMap.desiredInitialCostType || []);
   populate('maintenanceServiceLevel', optionsMap.maintenanceServiceLevel || []);
   populate('customerStatus', optionsMap.customerStatus || []);
+  populate('filterCustomerStatus', optionsMap.customerStatus || []);
   
   // [수정] Task 2: '배정고객' 시트에서 contractStatus가 삭제됨
   // populate('contractStatus', ...); // [삭제]
@@ -204,7 +214,7 @@ function populateSelectOptions(config) {
       }
       }
 
-      const consult = customer.consultationStatus || '미정';
+      const consult = customer.customerStatus || '미정';
       // [수정] Task 2: '배정고객' 시트에서 contractStatus가 삭제됨
       // const contract = customer.contractStatus || '미정';
       // const statusName = (contract !== '미해당' && contract !== '미정') ? contract : consult;
@@ -214,8 +224,18 @@ function populateSelectOptions(config) {
       const dbType = customer.dbType || '기타';
       
       // ▼▼▼ [수정] '관심 차종' 대신 '고객 메모' 데이터 추출 ▼▼▼
+      const carModel = customer.interestedCarModel || ''; // 관심차종
       const memo = customer.customerMemo || '...'; // '메모'가 없으면 '...' 표시
       
+      let combinedMemo = '...'; // 기본값
+      if (carModel && memo) {
+        combinedMemo = `${carModel} | ${memo}`; // 둘 다 있을 때
+      } else if (carModel) {
+        combinedMemo = carModel; // 관심차종만 있을 때
+      } else if (memo) {
+        combinedMemo = memo; // 메모만 있을 때
+      }
+
       // ▼▼▼ [수정] HTML 구조 변경 (model -> memo) ▼▼▼
       li.innerHTML = `
         <span class="li-item dbtype" title="${escapeHtml(dbType)}">
@@ -231,8 +251,8 @@ function populateSelectOptions(config) {
           ${escapeHtml(phone)}
         </span>
         
-        <span class="li-item memo" title="${escapeHtml(memo)}">
-          ${escapeHtml(memo)}
+        <span class="li-item memo" title="${escapeHtml(combinedMemo)}">
+          ${escapeHtml(combinedMemo)}
         </span>
         
         <span class="li-item log" title="${escapeHtml(lastLogText)}">
@@ -417,16 +437,18 @@ function handleSaveCustomerDetails(panelElement, assignmentId, saveBtn) {
 
   // [수정] Task 5 및 UI 요청 1: 'contractStatus' 및 'consultationStatus' 필드 제거
   const detailFields = [
-    'leadSource', 'customerType', 'gender', 'ageGroup', 'addressCity', 'addressDistrict',
-    'incomeType', 'creditInfo', 
-    'interestedCarModel', 'comparisonCarModel', 'ownedCarModel', 'carUsage', 'driverScope',
+    'leadSource', 'customerType', 'gender', 'ageGroup', 'addressCity', 'addressDistrict','detailAddress',
+    'incomeType','occupation', 'creditInfo', 
+    'interestedCarModel', 'comparisonCarModel', 'ownedCarModel', 'carUsage', 'driverScope','drivingDistance',
     'expectedContractTiming', 'desiredContractTerm', 'desiredInitialCostType',
     'maintenanceServiceLevel', 'salesCondition', 'isRepurchase', 'paymentMethod',
     'customerStatus', // [유지] 상단 그리드로 이동했으나 ID는 동일
     // 'consultationStatus', // [삭제] UI에서 필드 제거됨
     // 'contractStatus', // [삭제] 1:N 변경으로 제거됨
-    'customerMemo' // [유지] 상단 그리드의 '고객 메모' (목록 표시용)
+    'customerMemo', // [유지] 상단 그리드의 '고객 메모' (목록 표시용)
     // [참고] 하단의 'customerMemo_main' (textarea)는 이 함수로 저장되지 않음.
+    'quoteNumber', 'approvalNumber' // <-- ▼▼▼ [신규] 여기 추가 ▼▼▼
+
   ];
 
   const details = {};
@@ -713,10 +735,12 @@ function selectCustomer(assignmentId) {
       searchTerm: document.getElementById('filterSearchTerm').value,
       dateFrom: document.getElementById('filterAssignmentDateFrom').value,
       dateTo: document.getElementById('filterAssignmentDateTo').value,
-      consultStatus: document.getElementById('filterConsultationStatus').value,
-      // [수정] Task 2: contractStatus 필터는 서버에서 무시되지만, 값은 일단 전송
-      contractStatus: document.getElementById('filterContractStatus').value,
-      dbType: document.getElementById('filterDbType').value
+      customerStatus: document.getElementById('filterCustomerStatus').value,
+      // [수정] Task 2: contractStatus 사용 중지
+      // contractStatus: document.getElementById('filterContractStatus').value,
+      dbType: document.getElementById('filterDbType').value,
+      lastLogDateFrom: document.getElementById('filterLastLogDateFrom').value,
+      lastLogDateTo: document.getElementById('filterLastLogDateTo').value
       };
     } else {
       currentOffset += PAGE_SIZE;
@@ -864,15 +888,53 @@ document.addEventListener('DOMContentLoaded', () => {
   resetBtn.addEventListener('click', () => {
     document.getElementById('filterSearchTerm').value = '';
     document.getElementById('filterDbType').value = '';
-    document.getElementById('filterConsultationStatus').value = '';
-    document.getElementById('filterContractStatus').value = ''; // [수정] Task 2: 이 필터는 초기화되지만, 서버는 무시함
-    const dateFromInput = document.getElementById('filterAssignmentDateFrom');
+    document.getElementById('filterCustomerStatus').value = '';
+    // document.getElementById('filterContractStatus').value = ''; // [수정] Task 2: 이 필터 무시함
+
+    // ▼▼▼ [수정] 3개월 전 날짜 설정 로직 (초기 로드와 동일하게) ▼▼▼
     const today = new Date();
-    dateFromInput.value = new Date(today.setMonth(today.getMonth() - 3)).toISOString().split('T')[0];
+    const threeMonthsAgoStr = new Date(new Date().setMonth(today.getMonth() - 3)).toISOString().split('T')[0];
+    
+    document.getElementById('filterAssignmentDateFrom').value = threeMonthsAgoStr;
     document.getElementById('filterAssignmentDateTo').value = '';
+    
+    // 2. [수정] 마지막 상담일 필터 초기화
+    document.getElementById('filterLastLogDateFrom').value = threeMonthsAgoStr; // 3개월 전으로 설정
+    document.getElementById('filterLastLogDateTo').value = ''; // 비우기
     fetchCustomers(true); 
   });
-  
+  // ▼▼▼ [신규] 필터 영역에서 Enter 키로 검색 실행 ▼▼▼
+  const filterPanel = document.querySelector('.filter-panel');
+  if (filterPanel) {
+    filterPanel.addEventListener('keydown', (event) => {
+      // 1. Enter 키가 눌렸는지 확인
+      if (event.key === 'Enter') {
+        // 2. 이벤트가 발생한 태그가 input 또는 select인지 확인
+        const targetTag = event.target.tagName.toLowerCase();
+        if (targetTag === 'input' || targetTag === 'select') {
+          
+          event.preventDefault(); // 기본 동작(예: 폼 제출) 방지
+          
+          // 3. '검색' 버튼(applyFilterBtn)을 찾아서 강제로 클릭
+          const filterBtn = document.getElementById('applyFilterBtn');
+          if (filterBtn && !filterBtn.disabled) {
+            filterBtn.click();
+          }
+        }
+      }
+    });
+  }
+
+  // ▼▼▼ [신규] 모든 select 요소의 변경 감지하여 색상 처리 ▼▼▼
+  document.body.addEventListener('change', (e) => {
+    if (e.target.tagName === 'SELECT') {
+      if (e.target.value === "") {
+        e.target.classList.add('placeholder');
+      } else {
+        e.target.classList.remove('placeholder');
+      }
+    }
+  });
   loadMoreBtn.addEventListener('click', () => fetchCustomers(false));
 
   newPhoneInput.addEventListener('blur', (event) => {
@@ -921,10 +983,17 @@ document.addEventListener('DOMContentLoaded', () => {
   // --- 초기 로드 (변경 없음) ---
   // ★ 참고: data-view 속성은 Code.gs의 doGet에서 'list' 또는 'detail'을 받지만,
   // 이 JS는 해당 값을 무시하고 항상 'list' 뷰를 먼저 로드하도록 구성되어 있습니다.
-  const dateFromInput = document.getElementById('filterAssignmentDateFrom');
   const today = new Date();
-  dateFromInput.value = new Date(new Date().setMonth(today.getMonth() - 3)).toISOString().split('T')[0];
-  showSkeletonLoader(); 
+  const threeMonthsAgoStr = new Date(new Date().setMonth(today.getMonth() - 3)).toISOString().split('T')[0];
+
+  // 1. 배정일 시작 (기존 로직)
+  document.getElementById('filterAssignmentDateFrom').value = threeMonthsAgoStr;
+  
+  // 2. [신규] 마지막 상담일 시작
+  document.getElementById('filterLastLogDateFrom').value = threeMonthsAgoStr;
+  // ▲▲▲ [수정] ▲▲▲
+
+  showSkeletonLoader();
 
   console.log("🚀 [Client] Calling getConfigurations..."); 
 
@@ -1043,6 +1112,14 @@ function displayAssignmentDetails_Dynamic(result, panelElement) {
       } else {
         element.value = value !== null && value !== undefined ? value : '';
       }
+
+      if (element.tagName === 'SELECT') {
+         if (element.value === "") {
+           element.classList.add('placeholder');
+         } else {
+           element.classList.remove('placeholder');
+         }
+      }
     }
   };
 
@@ -1075,6 +1152,7 @@ function displayAssignmentDetails_Dynamic(result, panelElement) {
   setElementValue('comparisonCarModel', assignment.comparisonCarModel);
   setElementValue('ownedCarModel', assignment.ownedCarModel);
   setElementValue('carUsage', assignment.carUsage);
+  setElementValue('drivingDistance', assignment.drivingDistance);
   setElementValue('driverScope', assignment.driverScope);
 
   // --- 3. 희망 계약 조건 ---
@@ -1096,18 +1174,16 @@ function displayAssignmentDetails_Dynamic(result, panelElement) {
   
   // ▼▼▼ [수정] 상단 '고객 메모' (목록 표시용) 값 설정 ▼▼▼
   setElementValue('customerMemo', assignment.customerMemo);
-  
-  // [삭제] Task 7: contractInfoSection이 삭제됨
+  // ▼▼▼ [신규] 견적번호, 승인번호 값 설정 ▼▼▼
+  setElementValue('quoteNumber', assignment.quoteNumber);
+  setElementValue('approvalNumber', assignment.approvalNumber);
+  // ▲▲▲ [신규] ▲▲▲
 
-  // --- 5. [삭제] Task 7: 계약 상세 정보 (단일) 로직 전체 삭제 ---
-  
-  // --- 6. [제거] 상담 기록 렌더링 (selectCustomer에서 처리) ---
-  // --- 7. [제거] 새 상담 기록 입력 필드 초기화 (selectCustomer에서 처리) ---
   // --- 8. [신규] Task 8: 계약 목록 렌더링 (selectCustomer에서 처리) ---
 
   // [수정] 요청 14: h2 자체가 아닌, 내부의 span(#detailCustomerNameText)의 텍스트를 변경
   const detailTitleText = panelElement.querySelector('#detailCustomerNameText');
   if (detailTitleText) {
-      detailTitleText.textContent = assignment.customerName ? `${assignment.customerName} 고객 상세 정보` : '고객 상세 정보';
+      detailTitleText.textContent = assignment.customerName ? `${assignment.customerName}` : '고객 상세 정보';
   }
 }
