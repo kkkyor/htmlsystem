@@ -17,9 +17,29 @@ const SELECT_OPTIONS = {
   expectedContractTiming: ['즉시(1개월 내)', '3개월 내', '6개월 내', '미정'],
   desiredContractTerm: ['12개월', '24개월', '36개월', '48개월', '60개월','미정'],
   desiredInitialCostType: ['무보증', '보증금', '선납금', '보증증권', '미정'],
- 
+  drivingDistance: ['1만km', '1.5만km', '2만km', '2.5만km', '3만km', '3.5만km', '4만km', '4.5만km', '5만km', '5만km 이상', '미정'],
   maintenanceServiceLevel: ['미포함(Self)', '포함(기본)', '포함(고급)', '미정'],
-  customerStatus: ['신규 문의', '견적 발송', '가망 고객', '심사 진행중', '심사 완료', '계약 진행중', '계약 완료', '출고 완료', '상담 보류', '상담 이탈', '기존 고객'],
+  customerStatus: [
+    // 1. 초기 단계
+    '배정됨', 
+    '연락 시도 중',
+    // 2. 상담 단계
+    '상담 진행 중', 
+    '견적 발송', 
+    '추가 정보 요청',
+    // 3. 심사/결정 단계
+    '가망 고객',
+    '심사 진행중',
+    '심사 완료',
+    // 4. 마무리 단계
+    '계약 진행중',
+    '계약 완료', // (Won)
+    '출고 완료',
+    '기존 고객', // (Upsell 대기)
+    // 5. 이탈/보류
+    '상담 보류',
+    '상담 이탈' // (Lost)
+  ],
 
   // B. 주소 데이터 (시/도는 전체 목록, 시/군/구는 맵 형태)
   addressCities: ['서울특별시', '부산광역시', '대구광역시', '인천광역시', '광주광역시', '대전광역시', '울산광역시', '세종특별자치시', '경기도', '강원특별자치도', '충청북도', '충청남도', '전북특별자치도', '전라남도', '경상북도', '경상남도', '제주특별자치도'],
@@ -30,6 +50,7 @@ const SELECT_OPTIONS = {
     '인천광역시': ['계양구', '미추홀구', '남동구', '동구', '부평구', '서구', '연수구', '중구', '강화군', '옹진군']
     // ... 다른 시/도에 대한 시/군/구 목록 추가 ...
   }
+
 };
 
 /**
@@ -580,7 +601,7 @@ function getAssignedCustomers(filters) {
 
     // [추가] 필수 열이 맵에 존재하는지 확인 (안정성)
     // [수정] Task 2: 'contractStatus'가 '배정고객' 시트에서 제거되었으므로, COLS 검사에서도 제거합니다.
-    const requiredCols = ['assignedTo', 'assignmentDate', 'consultationStatus', 'dbType', 'customerName', 'customerPhoneNumber'];
+    const requiredCols = ['assignedTo', 'assignmentDate', 'customerStatus', 'dbType', 'customerName', 'customerPhoneNumber'];
     for (const col of requiredCols) {
         if (!COLS[col]) {
             throw new Error(`'배정고객' 시트 1행에서 필수 헤더 '${col}'를 찾을 수 없습니다. (열 이름이 변경되었는지 확인하세요)`);
@@ -612,9 +633,9 @@ function getAssignedCustomers(filters) {
         // [수정]
         } catch (e) {
           // Logger.log("QUERY 실패: " + e.message + " | 쿼리: " + queryString);
-// [삭제]
+  // [삭제]
           logError_('getAssignedCustomers_Gviz', e, { query: queryString });
-// [추가]
+  // [추가]
           throw new Error("데이터를 조회하는 중 오류가 발생했습니다. (QUERY 실패)");
         }
       }
@@ -638,22 +659,29 @@ function getAssignedCustomers(filters) {
       queryString += ` AND ${COLS.assignmentDate} < DATE '${dateToStr}'`;
     }
     
-    if (filters.consultStatus) {
-      queryString += ` AND ${COLS.consultationStatus} = '${escapeQueryString_(filters.consultStatus)}'`;
+    if (filters.customerStatus) {
+      queryString += ` AND ${COLS.customerStatus} = '${escapeQueryString_(filters.customerStatus)}'`;
     }
     
     // [수정] Task 2: 'contractStatus' 필터는 '배정고객' 시트에 더 이상 존재하지 않습니다.
     // ※참고: 이 필터가 UI에서 제거되지 않으면 Gviz 쿼리 오류가 발생합니다.
     //      (일단 서버에서는 이 필터링을 제거합니다.)
-    if (filters.contractStatus) {
-      // queryString += ` AND ${COLS.contractStatus} = '${escapeQueryString_(filters.contractStatus)}'`; // [삭제]
-      Logger.log(`[WARN] 'contractStatus' 필터는 '배정고객' 시트에서 제거되어 무시됩니다: ${filters.contractStatus}`);
-    }
     
     if (filters.dbType) {
       queryString += ` AND ${COLS.dbType} = '${escapeQueryString_(filters.dbType)}'`;
     }
-
+    // COLS.lastLogDate는 getHeaderColumnLetterMap_을 통해 동적으로 매핑됩니다.
+    if (filters.lastLogDateFrom) {
+      const dateFromStr = Utilities.formatDate(new Date(filters.lastLogDateFrom), "GMT+9", "yyyy-MM-dd");
+      queryString += ` AND ${COLS.lastLogDate} >= DATE '${dateFromStr}'`;
+    }
+    
+    if (filters.lastLogDateTo) {
+      const dateToObj = new Date(filters.lastLogDateTo);
+      dateToObj.setDate(dateToObj.getDate() + 1); // +1일 하여 '해당일 자정 전'까지 포함
+      const dateToStr = Utilities.formatDate(dateToObj, "GMT+9", "yyyy-MM-dd");
+      queryString += ` AND ${COLS.lastLogDate} < DATE '${dateToStr}'`;
+    }
     if (filters.searchTerm) {
       // ✨ [Issue #2 적용] LOWER() 및 matches '.*...*' 대신 CONTAINS 사용
       
@@ -819,6 +847,14 @@ function saveDetails(assignmentId, detailsFromClient) {
           valuesToUpdate[colIndex] = value;
         }
       });
+      // ▼▼▼ [신규] ARRAYFORMULA 충돌 방지 코드 ▼▼▼
+      // SearchHelper 열의 인덱스를 찾아서,
+      const searchHelperColIndex = headers.indexOf('SearchHelper');
+      if (searchHelperColIndex > -1) {
+        // 시트에 값을 쓸 때 해당 열을 강제로 null (빈 칸)로 만듭니다.
+        valuesToUpdate[searchHelperColIndex] = null;
+      }
+      // ▲▲▲ [신규] 코드 삽입 위치 ▲▲▲
       // --- 3. 쓰기 (Lock 내부) ---
       assignmentSheet.getRange(rowNum, 1, 1, headers.length).setValues([valuesToUpdate]);
       SpreadsheetApp.flush();
@@ -875,9 +911,9 @@ function saveCustomerDetails(assignmentId, details) {
   const EDITABLE_FIELDS = [
     // 기본 정보
     'leadSource', 'customerType', 'gender', 'ageGroup', 'addressCity', 'addressDistrict',
-    'incomeType', 'creditInfo',
+    'incomeType', 'creditInfo','quoteNumber', 'approvalNumber',
     // 고객 니즈
-    'interestedCarModel', 'comparisonCarModel', 'ownedCarModel', 'carUsage', 'driverScope',
+    'interestedCarModel', 'comparisonCarModel', 'ownedCarModel', 'carUsage', 'driverScope','drivingDistance',
     // 희망 계약 조건
     'expectedContractTiming', 'desiredContractTerm', 'desiredInitialCostType',
     'maintenanceServiceLevel', 'salesCondition', 'isRepurchase', 'paymentMethod',
@@ -888,6 +924,7 @@ function saveCustomerDetails(assignmentId, details) {
     'customerPhoneNumber',
     // ▼▼▼ [신규] 고객 메모 필드 추가 ▼▼▼
     'customerMemo'
+
   ];
   const sanitizedDetails = {};
   EDITABLE_FIELDS.forEach(key => {
@@ -1086,7 +1123,7 @@ function addNewCustomer(customerData) {
         dbType: customerData.dbType,
         assignmentDate: 
  timestamp.toISOString(), // 클라이언트 반환용 ISO 문자열
-        consultationStatus: "배정됨",
+        customerStatus: "배정됨",
         // [수정] Task 2: 'contractStatus'는 '배정고객' 시트에서 제거됨
         // contractStatus: "미해당" // [삭제]
       };
