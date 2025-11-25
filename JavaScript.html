@@ -1,122 +1,118 @@
 
-const loader = document.getElementById('loader');
-let currentAssignmentId = null; 
-
-const PAGE_SIZE = 30;
-let currentFilters = {};
-let currentOffset = 0;
-let totalCustomerCount = 0;
-
-function showLoader() { 
-  loader.classList.remove('hidden'); 
-  document.querySelectorAll('button, input, select, textarea').forEach(el => {
-    if (el.closest('.modal-content') || el.closest('.error-modal-content')) return; 
-    el.disabled = true;
-  });
-}
-
-function escapeHtml(text) {
-  if (text === null || text === undefined) return '';
-  const str = String(text);
-  const div = document.createElement('div');
-  div.textContent = str;
-  return div.innerHTML;
-}
-
-function hideLoader() { 
-  loader.classList.add('hidden'); 
-  document.querySelectorAll('button, input, select, textarea').forEach(el => {
-    el.disabled = false;
-  });
-}
-
-function showErrorModal(message, actions) {
-  const existingErrorModal = document.querySelector('.error-modal-overlay');
-  if (existingErrorModal) existingErrorModal.remove();
-
-  const modal = document.createElement('div');
-  modal.className = 'modal-overlay error-modal-overlay';
-  modal.style.zIndex = '100003';
-
-  const contentDiv = document.createElement('div');
-  contentDiv.className = 'error-modal-content';
-  contentDiv.innerHTML = `<h3>⚠️ 오류 발생</h3>`;
+  // ============================================================================
+  // [1] Supabase 설정 및 사용자 정보
+  // ============================================================================
+  // 🚨 대시보드 > Project Settings > API 에서 복사한 값을 아래에 넣어주세요.
+  const SUPABASE_URL = 'https://chooqydalmudfaprrevg.supabase.co'; 
+  const SUPABASE_KEY = 'sb_publishable_Sdl561keRe4k7fXKU64QNA_PjWxf60I'; 
   
-  const messageP = document.createElement('p');
-  messageP.textContent = message; 
-  messageP.style.margin = '20px 0';
-  messageP.style.fontSize = '1.1rem';
-  contentDiv.appendChild(messageP);
+  // Supabase 클라이언트 초기화
+  const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-  const actionsDiv = document.createElement('div');
-  actionsDiv.className = 'modal-actions';
-  actionsDiv.style.justifyContent = 'flex-end';
-  actionsDiv.style.gap = '10px'; 
+  // [임시 사용자 설정] 로그인 기능 구현 전까지 사용할 사용자 정보
+  // [기존]
+// const CURRENT_USER_NAME = "테스트영업자";
 
-  if (!actions || actions.length === 0) {
-    const okButton = document.createElement('button');
-    okButton.className = 'error-modal-btn'; 
-    okButton.textContent = '확인';
-    okButton.onclick = () => modal.remove();
-    actionsDiv.appendChild(okButton);
+// [변경] 로그인한 사용자 정보를 담을 변수 준비
+let session = null; 
+let currentUserEmail = null;
+
+  // ============================================================================
+  // [2] 설정 데이터 (기존 Code.gs에서 가져오던 상수값들)
+  // ============================================================================
+  const CONFIG = {
+    dbTypes: ['홈페이지문의', '지인소개', '블로그', '기타'], 
+    selectOptions: {
+      leadSource: ['홈페이지', '네이버검색', '다음검색', '구글검색', 'SNS 광고', '유튜브 광고', '소개', '기존고객 재렌트', '파트너사 전달', '오프라인 광고', '기타'],
+      ageGroup: ['20대(만21~25)', '20대(만26~)', '30대', '40대', '50대', '60대 이상', '미확인'],
+      incomeType: ['4대보험 직장인', '4대보험 제외 직장인', '전문직', '프리랜서', '일용직', '무직/학생', '미확인'],
+      creditInfo: ['1~3 등급(상)', '4~6 등급(중)', '7~9 등급(하)', '심사 불가', '심사 전', '미확인'],
+      carUsage: ['출퇴근용', '업무용(영업/출장)', '레저/패밀리용', '법인 임원용', '개인 사업장 운영', '기타', '미확인'],
+      drivingDistance: ['1만km', '1.5만km', '2만km', '2.5만km', '3만km', '3.5만km', '4만km', '4.5만km', '5만km', '5만km 이상', '미정'],
+      expectedContractTiming: ['즉시(1개월 내)', '3개월 내', '6개월 내', '미정'],
+      desiredContractTerm: ['12개월', '24개월', '36개월', '48개월', '60개월','미정'],
+      desiredInitialCostType: ['무보증', '보증금', '선납금', '보증증권', '미정'],
+      maintenanceServiceLevel: ['미포함(Self)', '포함(기본)', '포함(고급)', '미정'],
+      customerStatus: ['배정됨', '연락 시도 중', '상담 진행 중', '견적 발송', '추가 정보 요청', '가망 고객', '심사 진행중', '심사 완료', '계약 진행중', '계약 완료', '출고 완료', '기존 고객', '상담 보류', '상담 이탈'],
+      // 시/도 목록
+      addressCities: ['서울특별시', '부산광역시', '대구광역시', '인천광역시', '광주광역시', '대전광역시', '울산광역시', '세종특별자치시', '경기도', '강원특별자치도', '충청북도', '충청남도', '전북특별자치도', '전라남도', '경상북도', '경상남도', '제주특별자치도']
+    }
+  };
+
+  // 시/군/구 데이터 매핑 (서버 없이 클라이언트에서 처리)
+  const DISTRICTS_MAP = {
+    '서울특별시': ['강남구', '강동구', '강북구', '강서구', '관악구', '광진구', '구로구', '금천구', '노원구', '도봉구', '동대문구', '동작구', '마포구', '서대문구', '서초구', '성동구', '성북구', '송파구', '양천구', '영등포구', '용산구', '은평구', '종로구', '중구', '중랑구'],
+    '경기도': ['수원시', '성남시', '의정부시', '안양시', '부천시', '광명시', '평택시', '동두천시', '안산시', '고양시', '과천시', '구리시', '남양주시', '오산시', '시흥시', '군포시', '의왕시', '하남시', '용인시', '파주시', '이천시', '안성시', '김포시', '화성시', '광주시', '양주시', '포천시', '여주시', '연천군', '가평군', '양평군'],
+    '부산광역시': ['중구', '서구', '동구', '영도구', '부산진구', '동래구', '남구', '북구', '해운대구', '사하구', '금정구', '강서구', '연제구', '수영구', '사상구', '기장군']
+    // (필요시 다른 지역 데이터 추가)
+  };
+
+  // ============================================================================
+  // [3] 전역 변수 및 UI 유틸리티 함수
+  // ============================================================================
+  const loader = document.getElementById('loader');
+  let currentAssignmentId = null; 
+  const PAGE_SIZE = 30;
+  let currentFilters = {};
+  let currentOffset = 0;
+  let totalCustomerCount = 0;
+
+  // 초기화 시 로그인 상태 체크
+async function checkSession() {
+  const { data } = await supabase.auth.getSession();
+  session = data.session;
+
+  if (session) {
+    currentUserEmail = session.user.email;
+    console.log("로그인 됨:", currentUserEmail);
+    // 로그인 되었으니 데이터 불러오기
+    fetchCustomers(true); 
   } else {
-    actions.forEach(action => {
-      const button = document.createElement('button');
-      button.textContent = action.text;
-      
-      if (action.isPrimary) {
-        button.className = 'error-modal-btn'; 
-      } else {
-        button.className = 'secondary'; 
-      }
-      
-      button.onclick = () => {
-        if (action.action) {
-          action.action(); 
-        }
-        modal.remove(); 
-      };
-      actionsDiv.appendChild(button);
+    console.log("로그인 안 됨");
+    // 로그인 버튼 보여주기 등의 UI 처리
+    showLoginModal(); 
+  }
+}
+
+// 구글 로그인 함수
+async function signInWithGoogle() {
+  const { data, error } = await supabase.auth.signInWithOAuth({
+    provider: 'google',
+  });
+}
+
+// 로그아웃 함수
+async function signOut() {
+  const { error } = await supabase.auth.signOut();
+  window.location.reload(); // 새로고침
+}
+
+  // 로딩 화면 제어
+  function showLoader() { 
+    loader.classList.remove('hidden'); 
+    document.querySelectorAll('button, input, select, textarea').forEach(el => {
+      if (el.closest('.modal-content') || el.closest('.error-modal-content')) return; 
+      el.disabled = true;
     });
   }
 
-  contentDiv.appendChild(actionsDiv);
-  modal.appendChild(contentDiv);
-  document.body.appendChild(modal);
-}
-
-function handleFailure(error) {
-  hideLoader();
-  console.error("Apps Script Error:", error);
-  
-  const msg = error.message;
-  let userMessage = `오류 발생: ${msg}`; 
-  let actions = []; 
-
-  if (msg.includes("찾을 수 없습니다")) {
-    userMessage = "요청하신 데이터를 찾을 수 없습니다. 목록을 새로고침합니다.";
-    actions = [
-      { text: '새로고침', action: () => window.location.reload(), isPrimary: true }
-    ];
-  } else if (msg.includes("권한")) {
-    userMessage = "이 작업을 수행할 권한이 없습니다. (예: 본인 고객이 아닙니다.)";
-  } else if (msg.includes("시스템이") && msg.includes("혼잡합니다")) {
-    userMessage = "시스템이 현재 매우 혼잡합니다. (다른 사용자가 동시 저장 중) 잠시 후 다시 시도해주세요.";
-  } else if (msg.includes("상담 기록이 너무 깁니다")) {
-    userMessage = msg; 
-  } else if (msg.includes("timeout") || msg.includes("시간") || msg.includes("NetworkError")) {
-    userMessage = "서버 응답 시간이 초과되었거나 네트워크 연결에 문제가 있습니다. 인터넷 연결을 확인 후 다시 시도해주세요.";
-  } else {
-    userMessage = "알 수 없는 서버 오류가 발생했습니다. 페이지를 새로고침하여 시스템을 재시작하는 것이 좋습니다.";
-    actions = [
-      { text: '취소', action: null, isPrimary: false }, 
-      { text: '새로고침', action: () => window.location.reload(), isPrimary: true }
-    ];
+  function hideLoader() { 
+    loader.classList.add('hidden'); 
+    document.querySelectorAll('button, input, select, textarea').forEach(el => {
+      el.disabled = false;
+    });
   }
-  
-  showErrorModal(userMessage, actions);
-}
- 
+
+  // HTML 이스케이프 (보안)
+  function escapeHtml(text) {
+    if (text === null || text === undefined) return '';
+    const str = String(text);
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
+  // 전화번호 포맷팅
   function formatPhoneNumber_Client(phone) {
     if (!phone) return "";
     const digits = phone.replace(/\D/g, "");
@@ -125,171 +121,231 @@ function handleFailure(error) {
     return phone;
   }
 
-function populateSelectOptions(config) {
-  const optionsMap = config.selectOptions; 
-  if (!optionsMap) {
-    console.error("Select options not found in config object.");
-    return;
+  // 에러 모달 표시
+  function showErrorModal(message, actions) {
+    const existingErrorModal = document.querySelector('.error-modal-overlay');
+    if (existingErrorModal) existingErrorModal.remove();
+
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay error-modal-overlay';
+    modal.style.zIndex = '100003';
+
+    const contentDiv = document.createElement('div');
+    contentDiv.className = 'error-modal-content';
+    contentDiv.innerHTML = `<h3>⚠️ 알림</h3>`;
+    
+    const messageP = document.createElement('p');
+    messageP.textContent = message; 
+    messageP.style.margin = '20px 0';
+    messageP.style.fontSize = '1.1rem';
+    contentDiv.appendChild(messageP);
+
+    const actionsDiv = document.createElement('div');
+    actionsDiv.className = 'modal-actions';
+    actionsDiv.style.justifyContent = 'flex-end';
+    actionsDiv.style.gap = '10px'; 
+
+    if (!actions || actions.length === 0) {
+      const okButton = document.createElement('button');
+      okButton.className = 'error-modal-btn'; 
+      okButton.textContent = '확인';
+      okButton.onclick = () => modal.remove();
+      actionsDiv.appendChild(okButton);
+    } else {
+      actions.forEach(action => {
+        const button = document.createElement('button');
+        button.textContent = action.text;
+        button.className = action.isPrimary ? 'error-modal-btn' : 'secondary';
+        button.onclick = () => {
+          if (action.action) action.action(); 
+          modal.remove(); 
+        };
+        actionsDiv.appendChild(button);
+      });
+    }
+    contentDiv.appendChild(actionsDiv);
+    modal.appendChild(contentDiv);
+    document.body.appendChild(modal);
   }
 
-  // Helper function to populate a single select element
-  const populate = (elementId, optionsArray) => {
-    const selectElement = document.getElementById(elementId);
-    if (selectElement) {
-      const firstOption = selectElement.options[0]?.value === "" ? selectElement.options[0] : null;
-      selectElement.innerHTML = ''; 
-      if (firstOption) {
-        selectElement.appendChild(firstOption); 
-      }
-      optionsArray.forEach(optionValue => {
-        const option = document.createElement('option');
-        option.value = optionValue;
-        option.textContent = optionValue;
-        selectElement.appendChild(option);
-      });
+  function handleFailure(error) {
+    hideLoader();
+    console.error("System Error:", error);
+    showErrorModal(`오류가 발생했습니다: ${error.message || error}`);
+  }
 
-      // ▼▼▼ [신규] 옵션 채운 후 초기 색상 설정 ▼▼▼
-      if (selectElement.value === "") {
-        selectElement.classList.add('placeholder');
-      } else {
-        selectElement.classList.remove('placeholder');
-      }
+  function showSaveFeedback(buttonElement) {
+    const originalText = buttonElement.textContent;
+    buttonElement.textContent = "✅ 저장 완료";
+    buttonElement.disabled = true;
+    setTimeout(() => {
+      buttonElement.textContent = originalText;
+      buttonElement.disabled = false;
+    }, 2000);
+  }
 
+  // ============================================================================
+  // [4] 데이터 변환기 (DB SnakeCase <-> UI CamelCase)
+  // ============================================================================
+  function toUiData(dbData) {
+    if (!dbData) return null;
+    return {
+      assignmentId: dbData.assignment_id,
+      customerName: dbData.customer_name,
+      customerPhoneNumber: dbData.customer_phone,
+      assignedTo: dbData.assigned_to,
+      dbType: dbData.db_type,
+      assignmentDate: dbData.assignment_date,
+      customerStatus: dbData.customer_status,
+      leadSource: dbData.lead_source,
+      customerType: dbData.customer_type,
+      gender: dbData.gender,
+      ageGroup: dbData.age_group,
+      addressCity: dbData.address_city,
+      addressDistrict: dbData.address_district,
+      incomeType: dbData.income_type,
+      creditInfo: dbData.credit_info,
+      interestedCarModel: dbData.interested_car_model,
+      comparisonCarModel: dbData.comparison_car_model,
+      ownedCarModel: dbData.owned_car_model,
+      carUsage: dbData.car_usage,
+      driverScope: dbData.driver_scope,
+      drivingDistance: dbData.driving_distance,
+      expectedContractTiming: dbData.expected_contract_timing,
+      desiredContractTerm: dbData.desired_contract_term,
+      desiredInitialCostType: dbData.desired_initial_cost_type,
+      maintenanceServiceLevel: dbData.maintenance_service_level,
+      salesCondition: dbData.sales_condition,
+      isRepurchase: dbData.is_repurchase,
+      paymentMethod: dbData.payment_method,
+      customerMemo: dbData.customer_memo,
+      quoteNumber: dbData.quote_number,
+      approvalNumber: dbData.approval_number,
+      // 직업(occupation) 추가
+      occupation: dbData.occupation
+    };
+  }
+
+  // ============================================================================
+  // [5] UI 렌더링 함수들
+  // ============================================================================
+  function populateSelectOptions(config) {
+    const optionsMap = config.selectOptions; 
+    const populate = (elementId, optionsArray) => {
+      const selectElement = document.getElementById(elementId);
+      if (selectElement) {
+        const firstOption = selectElement.options[0]; // 첫번째 옵션(placeholder) 유지
+        selectElement.innerHTML = ''; 
+        if (firstOption) selectElement.appendChild(firstOption); 
+        
+        optionsArray.forEach(optionValue => {
+          const option = document.createElement('option');
+          option.value = optionValue;
+          option.textContent = optionValue;
+          selectElement.appendChild(option);
+        });
+      }
+    };
+
+    populate('filterDbType', config.dbTypes || []); 
+    populate('newDbType', config.dbTypes || []);
+    populate('leadSource', optionsMap.leadSource || []);
+    populate('ageGroup', optionsMap.ageGroup || []);
+    populate('addressCity', optionsMap.addressCities || []); 
+    populate('incomeType', optionsMap.incomeType || []);
+    populate('creditInfo', optionsMap.creditInfo || []);
+    populate('carUsage', optionsMap.carUsage || []);
+    populate('drivingDistance', optionsMap.drivingDistance || []);
+    populate('expectedContractTiming', optionsMap.expectedContractTiming || []);
+    populate('desiredContractTerm', optionsMap.desiredContractTerm || []);
+    populate('desiredInitialCostType', optionsMap.desiredInitialCostType || []);
+    populate('maintenanceServiceLevel', optionsMap.maintenanceServiceLevel || []);
+    populate('customerStatus', optionsMap.customerStatus || []);
+    populate('filterCustomerStatus', optionsMap.customerStatus || []);
+  }
+
+  function loadDistricts(selectedCity, valueToSelect) {
+    const districtSelect = document.getElementById('addressDistrict');
+    // HTML에 해당 ID가 없을 경우 무시 (이전 버전 호환)
+    if (!districtSelect) return; 
+
+    districtSelect.innerHTML = '<option value="">-- 선택 --</option>';
+    
+    if (!selectedCity) {
+      districtSelect.disabled = true;
+      return;
     }
-  };
 
-  // --- 각 select 요소에 옵션 채우기 ---
-  populate('filterDbType', config.dbTypes || []); 
-  populate('newDbType', config.dbTypes || []);
-  populate('leadSource', optionsMap.leadSource || []);
-  populate('ageGroup', optionsMap.ageGroup || []);
-  populate('addressCity', optionsMap.addressCities || []); 
-  populate('incomeType', optionsMap.incomeType || []);
-  populate('creditInfo', optionsMap.creditInfo || []);
-  populate('carUsage', optionsMap.carUsage || []);
-  populate('drivingDistance', optionsMap.drivingDistance || []);
-  populate('expectedContractTiming', optionsMap.expectedContractTiming || []);
-  populate('desiredContractTerm', optionsMap.desiredContractTerm || []);
-  populate('desiredInitialCostType', optionsMap.desiredInitialCostType || []);
-  populate('maintenanceServiceLevel', optionsMap.maintenanceServiceLevel || []);
-  populate('customerStatus', optionsMap.customerStatus || []);
-  populate('filterCustomerStatus', optionsMap.customerStatus || []);
-  
-  // [수정] Task 2: '배정고객' 시트에서 contractStatus가 삭제됨
-  // populate('contractStatus', ...); // [삭제]
-}
+    const districts = DISTRICTS_MAP[selectedCity] || [];
+    
+    if (districts.length > 0) {
+      districts.forEach(d => {
+        const option = document.createElement('option');
+        option.value = d;
+        option.textContent = d;
+        districtSelect.appendChild(option);
+      });
+      if (valueToSelect) districtSelect.value = valueToSelect;
+      districtSelect.disabled = false;
+    } else {
+      districtSelect.innerHTML = '<option value="">정보 없음</option>';
+      districtSelect.disabled = true;
+    }
+  }
 
-  // [수정] Task 2: getStatusClass는 이제 '배정고객' 시트의 contractStatus를 참조하지 않음
-  // (추후 1:N 계약 목록의 '대표 상태'를 표시해야 한다면 이 로직은 복잡해짐)
-  // (일단은 'consultStatus'만 보도록 단순화)
-  function getStatusClass(consultStatus) {
-    // if (contractStatus === '계약 체결') return 'contracted'; // [삭제]
-    // if (contractStatus === '계약 무산') return 'failed'; // [삭제]
-    if (consultStatus === '상담 완료') return 'completed';
-    if (consultStatus === '상담 진행 중' || consultStatus === '연락 시도 중') return 'consulting';
+  function getStatusClass(status) {
+    if (status === '상담 완료') return 'completed';
+    if (status === '상담 진행 중' || status === '연락 시도 중') return 'consulting';
     return '';
   }
 
   function buildCustomerLi(customer) {
-      const li = document.createElement('li');
-      li.tabIndex = 0;
-      li.dataset.assignmentId = customer.assignmentId;
-      
-      // --- 데이터 포맷팅 ---
-      const phone = customer.customerPhoneNumber ? formatPhoneNumber_Client(customer.customerPhoneNumber) : '번호 없음';
-      
-      let lastLogText = '기록 없음'; // 최종 로그 *시간*
-      if (customer.lastLogDate) {
-      try {
-        const logDate = new Date(customer.lastLogDate);
-        if (!isNaN(logDate.getTime())) {
-          lastLogText = "최종: " + logDate.toLocaleString('ko-KR', {
-            month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit'
-          });
-        } else {
-          lastLogText = '기록 (날짜오류)';
-        }
-      } catch (e) {
-        lastLogText = '기록 (변환오류)';
-      }
-      }
+    const li = document.createElement('li');
+    li.tabIndex = 0;
+    li.dataset.assignmentId = customer.assignmentId;
+    
+    const phone = customer.customerPhoneNumber ? formatPhoneNumber_Client(customer.customerPhoneNumber) : '번호 없음';
+    const dbType = customer.dbType || '기타';
+    const statusName = customer.customerStatus || '미정';
+    const statusClass = getStatusClass(statusName);
+    
+    const carModel = customer.interestedCarModel || ''; 
+    const memo = customer.customerMemo || '...'; 
+    let combinedMemo = '...';
+    if (carModel && memo !== '...') combinedMemo = `${carModel} | ${memo}`;
+    else if (carModel) combinedMemo = carModel;
+    else if (memo !== '...') combinedMemo = memo;
 
-      const consult = customer.customerStatus || '미정';
-      // [수정] Task 2: '배정고객' 시트에서 contractStatus가 삭제됨
-      // const contract = customer.contractStatus || '미정';
-      // const statusName = (contract !== '미해당' && contract !== '미정') ? contract : consult;
-      const statusName = consult; // [수정]
-      const statusClass = getStatusClass(consult); // [수정]
-      
-      const dbType = customer.dbType || '기타';
-      
-      // ▼▼▼ [수정] '관심 차종' 대신 '고객 메모' 데이터 추출 ▼▼▼
-      const carModel = customer.interestedCarModel || ''; // 관심차종
-      const memo = customer.customerMemo || '...'; // '메모'가 없으면 '...' 표시
-      
-      let combinedMemo = '...'; // 기본값
-      if (carModel && memo) {
-        combinedMemo = `${carModel} | ${memo}`; // 둘 다 있을 때
-      } else if (carModel) {
-        combinedMemo = carModel; // 관심차종만 있을 때
-      } else if (memo) {
-        combinedMemo = memo; // 메모만 있을 때
-      }
+    // 최근 상담일 (Supabase join 구현 전이라 일단 생략하거나 추후 구현)
+    const lastLogText = ''; 
 
-      // ▼▼▼ [수정] HTML 구조 변경 (model -> memo) ▼▼▼
-      li.innerHTML = `
-        <span class="li-item dbtype" title="${escapeHtml(dbType)}">
-          ${escapeHtml(dbType)}
-        </span>
-        <span class="li-item status">
-          <span class="status-badge ${statusClass}">${escapeHtml(statusName)}</span>
-        </span>
-        <span class="li-item name" title="${escapeHtml(customer.customerName)}">
-          ${escapeHtml(customer.customerName)}
-        </span>
-        <span class="li-item phone" title="${escapeHtml(phone)}">
-          ${escapeHtml(phone)}
-        </span>
-        
-        <span class="li-item memo" title="${escapeHtml(combinedMemo)}">
-          ${escapeHtml(combinedMemo)}
-        </span>
-        
-        <span class="li-item log" title="${escapeHtml(lastLogText)}">
-          ${escapeHtml(lastLogText)}
-        </span>
-      `;
-      // ▲▲▲ [수정] ▲▲▲
-      
-      return li;
+    li.innerHTML = `
+      <span class="li-item dbtype" title="${escapeHtml(dbType)}">${escapeHtml(dbType)}</span>
+      <span class="li-item status"><span class="status-badge ${statusClass}">${escapeHtml(statusName)}</span></span>
+      <span class="li-item name" title="${escapeHtml(customer.customerName)}">${escapeHtml(customer.customerName)}</span>
+      <span class="li-item phone" title="${escapeHtml(phone)}">${escapeHtml(phone)}</span>
+      <span class="li-item memo" title="${escapeHtml(combinedMemo)}">${escapeHtml(combinedMemo)}</span>
+      <span class="li-item log">${escapeHtml(lastLogText)}</span>
+    `;
+    return li;
   }
 
   function displayAssignedCustomers(customers, isNewSearch) {
     const ul = document.getElementById('assignedCustomersList');
     if (!ul) return; 
-
     const loadMoreBtn = document.getElementById('loadMoreBtn');
     
-    if (isNewSearch) {
-      ul.innerHTML = '';
-    }
+    if (isNewSearch) ul.innerHTML = '';
     
-    const loadingLi = ul.querySelector('.skeleton-li'); 
-    if (loadingLi) {
-      ul.innerHTML = ''; 
-    }
-
     if (customers.length === 0 && isNewSearch) {
       ul.innerHTML = '<li>조건에 맞는 고객이 없습니다.</li>';
     } else {
       customers.forEach(customer => {
-        const li = buildCustomerLi(customer);
-        ul.appendChild(li);
+        ul.appendChild(buildCustomerLi(customer));
       });
     }
 
-    const currentLoadedCount = ul.querySelectorAll('li[data-assignment-id]').length;
-    if (currentLoadedCount < totalCustomerCount) {
+    if (totalCustomerCount > (currentOffset + customers.length)) {
       loadMoreBtn.classList.remove('hidden');
     } else {
       loadMoreBtn.classList.add('hidden');
@@ -297,486 +353,63 @@ function populateSelectOptions(config) {
     loadMoreBtn.disabled = false;
   }
 
-function updateListItem(assignment) {
-  try {
-    const liToUpdate = document.querySelector(`#assignedCustomersList li[data-assignment-id="${assignment.assignmentId}"]`);
-    if (!liToUpdate) return;
+  function renderConsultationLogs_Dynamic(logs, rootElement) {
+    const logsDiv = rootElement.querySelector('#consultationLogs');
+    if (!logsDiv) return;
     
-    const newLi = buildCustomerLi(assignment);
-    liToUpdate.innerHTML = newLi.innerHTML;
-    
-    // ToDo 목록에서도 업데이트 (선택 사항, 추후 구현)
-    // const todoLi = document.querySelector(`#todoCustomersList li[data-assignment-id="${assignment.assignmentId}"]`);
-    // if (todoLi) { ... }
-    
-    liToUpdate.classList.remove('flash-success');
-    void liToUpdate.offsetWidth; 
-    liToUpdate.classList.add('flash-success');
-    
-  } catch (e) {
-    console.error("Failed to update list item:", e);
-  }
-}
+    logsDiv.innerHTML = (!logs || logs.length === 0) ? '<p style="padding: 20px; text-align: center; color: #777;">상담 기록이 없습니다.</p>' : '';
+    if (!logs) return;
 
-// ★ [수정] rootElement는 이제 '.detail-log-pane'이 됩니다.
-function renderConsultationLogs_Dynamic(logs, rootElement) {
-  const logsDiv = rootElement.querySelector('#consultationLogs');
-  if (!logsDiv) {
-      console.error("Could not find #consultationLogs div in rootElement", rootElement);
+    logs.forEach(log => {
+      const logEntryDiv = document.createElement('div');
+      logEntryDiv.className = 'log-entry';
+      
+      const dateStrong = document.createElement('strong');
+      dateStrong.textContent = log.logTimestamp ? new Date(log.logTimestamp).toLocaleString('ko-KR') : '날짜 없음'; 
+      
+      const contentDiv = document.createElement('div');
+      contentDiv.textContent = log.logContent || ''; 
+      contentDiv.style.whiteSpace = 'pre-wrap'; 
+
+      logEntryDiv.appendChild(dateStrong);
+      logEntryDiv.appendChild(document.createElement('br'));
+      logEntryDiv.appendChild(contentDiv);
+      logsDiv.appendChild(logEntryDiv);
+    });
+  }
+
+  function renderContractList(contracts, panelElement) {
+    const ul = panelElement.querySelector('#contractList');
+    if (!ul) return;
+
+    if (!contracts || contracts.length === 0) {
+      ul.innerHTML = '<li style="padding: 10px; text-align: center; color: #777;">(계약 이력이 없습니다.)</li>';
       return;
-  }
-  
-  logsDiv.innerHTML = (!logs || logs.length === 0) ? '<p style="padding: 20px; text-align: center; color: #777;">상담 기록이 없습니다.</p>' : '';
-  if (!logs) return;
-
-  logs.sort((a, b) => new Date(b.logTimestamp) - new Date(a.logTimestamp));
-  
-  logs.forEach(log => {
-    const logEntryDiv = document.createElement('div');
-    logEntryDiv.className = 'log-entry';
-
-    const dateStrong = document.createElement('strong');
-    dateStrong.textContent = log.logTimestamp ? 
-      new Date(log.logTimestamp).toLocaleString('ko-KR') : '날짜 없음'; 
-
-    const contentDiv = document.createElement('div');
-    contentDiv.textContent = log.logContent || ''; 
-    contentDiv.style.whiteSpace = 'pre-wrap'; 
-
-    logEntryDiv.appendChild(dateStrong);
-    logEntryDiv.appendChild(document.createElement('br'));
-    logEntryDiv.appendChild(contentDiv);
-    
-    logsDiv.appendChild(logEntryDiv);
-  });
-}
-
-/**
- * [신규] Task 8: 계약 이력 목록 렌더링
- * @param {Array} contracts - 서버에서 받은 계약 목록
- * @param {HTMLElement} panelElement - customerDetailPanel 요소
- */
-function renderContractList(contracts, panelElement) {
-  const ul = panelElement.querySelector('#contractList');
-  if (!ul) {
-    console.error("Could not find #contractList ul in panelElement", panelElement);
-    return;
-  }
-
-  if (!contracts || contracts.length === 0) {
-    ul.innerHTML = '<li style="padding: 10px; text-align: center; color: #777;">(계약 이력이 없습니다.)</li>';
-    return;
-  }
-
-  ul.innerHTML = ''; // 기존 목록 초기화
-  
-  // (서버에서 이미 contractDate 최신순으로 정렬되어 옴)
-  contracts.forEach(contract => {
-    const li = document.createElement('li');
-    li.style.cssText = "padding: 10px 8px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; gap: 10px;";
-    
-    const dateStr = contract.contractDate ? contract.contractDate.split('T')[0] : '날짜 미정';
-    const car = contract.contractCarModel || '차종 미입력';
-    const amount = contract.contractAmount ? `${Number(contract.contractAmount).toLocaleString('ko-KR')} 원` : '금액 미입력';
-    const status = contract.contractStatus || '상태 미입력';
-
-    // TODO: 계약 상태(status)에 따라 배지 스타일 추가
-    const statusClass = ''; 
-    
-    li.innerHTML = `
-      <div style="flex: 1; display: flex; flex-direction: column;">
-        <span style="font-weight: bold; font-size: 1.05rem;">${escapeHtml(car)}</span>
-        <span style="font-size: 0.9rem; color: #555;">${escapeHtml(dateStr)} | ${escapeHtml(amount)}</span>
-      </div>
-      <div style="flex-shrink: 0;">
-         <span class="status-badge ${statusClass}" style="font-size: 0.9rem;">${escapeHtml(status)}</span>
-      </div>
-    `;
-    // TODO: 클릭 시 계약 상세 모달 띄우기 (추후 기능 확장)
-    // li.onclick = () => openContractDetailModal(contract.contractId);
-    
-    ul.appendChild(li);
-  });
-}
-
-
-function showSaveFeedback(buttonElement) {
-  const originalText = buttonElement.textContent;
-  buttonElement.textContent = "✅ 저장 완료";
-  buttonElement.disabled = true;
-  setTimeout(() => {
-    buttonElement.textContent = originalText;
-    buttonElement.disabled = false;
-  }, 2000);
-}
-
-// ★ [수정] panelElement는 이제 '.detail-panel'이 됩니다.
-function handleSavePhoneNumber(panelElement, assignmentId, saveBtn) {
-  if (!assignmentId) return;
-  // .detail-info-pane 내부의 요소를 찾습니다.
-  const phoneInput = panelElement.querySelector('#detailCustomerPhoneNumber');
-  phoneInput.value = formatPhoneNumber_Client(phoneInput.value);
-  
-  showLoader();
-  google.script.run
-    .withSuccessHandler(result => {
-      hideLoader();
-      // [수정] Task 4: result 객체에 contracts가 포함되어 있으므로, 
-      // displayAssignmentDetails_Dynamic가 계약 목록까지 새로고침합니다.
-      displayAssignmentDetails_Dynamic(result, panelElement); // ★ 정보 패널(좌측)만 리프시
-      showSaveFeedback(saveBtn); 
-      updateListItem(result.assignment);
-    })
-    .withFailureHandler(handleFailure)
-    .saveCustomerDetails(assignmentId, { customerPhoneNumber: phoneInput.value });
-}
-
-// ★ [수정] panelElement는 .detail-panel
-function handleSaveCustomerDetails(panelElement, assignmentId, saveBtn) {
-  if (!assignmentId) return;
-
-  // [수정] Task 5 및 UI 요청 1: 'contractStatus' 및 'consultationStatus' 필드 제거
-  const detailFields = [
-    'leadSource', 'customerType', 'gender', 'ageGroup', 'addressCity', 'addressDistrict','detailAddress',
-    'incomeType','occupation', 'creditInfo', 
-    'interestedCarModel', 'comparisonCarModel', 'ownedCarModel', 'carUsage', 'driverScope','drivingDistance',
-    'expectedContractTiming', 'desiredContractTerm', 'desiredInitialCostType',
-    'maintenanceServiceLevel', 'salesCondition', 'isRepurchase', 'paymentMethod',
-    'customerStatus', // [유지] 상단 그리드로 이동했으나 ID는 동일
-    // 'consultationStatus', // [삭제] UI에서 필드 제거됨
-    // 'contractStatus', // [삭제] 1:N 변경으로 제거됨
-    'customerMemo', // [유지] 상단 그리드의 '고객 메모' (목록 표시용)
-    // [참고] 하단의 'customerMemo_main' (textarea)는 이 함수로 저장되지 않음.
-    'quoteNumber', 'approvalNumber' // <-- ▼▼▼ [신규] 여기 추가 ▼▼▼
-
-  ];
-
-  const details = {};
-  detailFields.forEach(fieldId => {
-    // ★ [수정] panelElement(.detail-panel) 내부에서 ID 검색
-    const element = panelElement.querySelector('#' + fieldId);
-    if (element) {
-        if ('value' in element) {
-             details[fieldId] = element.value.trim();
-        }
-    } else {
-      // [수정] 삭제된 필드를 찾지 못해도 오류를 발생시키지 않고 경고만 띄움
-      console.warn(`[handleSaveCustomerDetails] Element with ID #${fieldId} not found.`);
-    }
-  });
-
-  console.log("Saving details:", details); 
-
-  showLoader();
-  google.script.run
-    .withSuccessHandler(result => {
-      hideLoader();
-      // [수정] Task 4: result 객체에 contracts가 포함되어 있으므로, 
-      // displayAssignmentDetails_Dynamic가 계약 목록까지 새로고침합니다.
-      displayAssignmentDetails_Dynamic(result, panelElement); // ★ 정보 패널(좌측)만 리프시
-      showSaveFeedback(saveBtn);
-      updateListItem(result.assignment); 
-    })
-    .withFailureHandler(handleFailure)
-    .saveCustomerDetails(assignmentId, details); 
-}
-
-// ★ [삭제] Task 5: handleSaveContractDetails 함수 전체 삭제
-/*
-function handleSaveContractDetails(panelElement, assignmentId, saveBtn) {
-  // ... (기존 함수 내용) ...
-}
-*/
-
-// ★ [수정] panelElement는 이제 '.detail-log-pane'이 됩니다.
-function handleAddLog(panelElement, assignmentId) {
-  if (!assignmentId) return;
-  const contentEl = panelElement.querySelector('#newLogContent');
-  const content = contentEl.value.trim();
-  if (!content) {
-    showErrorModal("기록 내용을 입력해주세요.");
-    return;
-  }
-  
-  showLoader();
-  google.script.run
-    .withSuccessHandler(result => { 
-      hideLoader();
-      renderConsultationLogs_Dynamic(result.logs, panelElement); // ★ 로그 패널(우측)만 리프시
-      contentEl.value = ''; 
-      updateListItem(result.assignment); // 목록의 '최종상담일' 업데이트
-      
-      // [신규] Task 4/8: 로그 추가 시 계약 목록도 함께 새로고침 (혹시 모를 상태 변경 대비)
-      const detailPanel = document.getElementById('customerDetailPanel');
-      if (detailPanel && result.contracts) {
-        renderContractList(result.contracts, detailPanel);
-      }
-    })
-    .withFailureHandler(handleFailure)
-    .addConsultationLog(assignmentId, content);
-}
-
-// ★ [수정] 뷰 전환 로직에 맞게 리스너 재구성
-function attachDetailPanelListeners() {
-  const panelElement = document.getElementById('customerDetailPanel');
-  if (!panelElement) {
-    return;
-  }
-
-  // ★ 이벤트 위임을 사용하여 .detail-panel(.detail-info-pane + .detail-log-pane) 전체에 리스너 부착
-  panelElement.addEventListener('click', e => {
-    const target = e.target;
-    // [수정] 요청 14: 버튼이 h2 안에 있으므로 closest()로 버튼 자체를 찾음
-    const targetButton = e.target.closest('button');
-    const targetId = targetButton ? targetButton.id : target.id; 
-    
-    const assignmentId = currentAssignmentId; 
-
-    // 공통: assignmentId가 없으면 저장/추가류 동작 방지
-    // [수정] Task 5: 'saveContractBtn' 제거
-    if (!assignmentId && (targetId === 'savePhoneNumberBtn' || targetId === 'saveCustomerDetailsBtn' || /* targetId === 'saveContractBtn' || */ targetId === 'addLogBtn')) {
-      // '뒤로가기'는 예외
-      if (targetId === 'backToListBtn') {
-         // pass
-      } else {
-        console.error("No currentAssignmentId set for save/add action.");
-        return;
-      }
     }
 
-    switch (targetId) {
-      // --- 뷰 전환 ---
-      case 'backToListBtn':
-        e.preventDefault();
-        panelElement.classList.add('hidden'); // 상세 뷰 숨기기
-        document.getElementById('listPanel').classList.remove('hidden'); // 목록 뷰 표시
-        
-        // 목록 활성화 해제
-        const currentActive = document.querySelector('#assignedCustomersList li.active');
-        if (currentActive) currentActive.classList.remove('active');
-        currentAssignmentId = null; 
-        break;
-        
-      // --- 정보 패널(.detail-info-pane) 버튼 ---
-      case 'savePhoneNumberBtn':
-        handleSavePhoneNumber(panelElement, assignmentId, targetButton); // [수정] target -> targetButton
-        break;
+    ul.innerHTML = ''; 
+    contracts.forEach(contract => {
+      const li = document.createElement('li');
+      li.style.cssText = "padding: 10px 8px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; gap: 10px;";
       
-      case 'saveCustomerDetailsBtn':
-        handleSaveCustomerDetails(panelElement, assignmentId, targetButton); // [수정] target -> targetButton
-        break;
-      
-      // [삭제] Task 5: 'saveContractBtn' 리스너 제거
+      const dateStr = contract.contractDate ? contract.contractDate : '날짜 미정';
+      const car = contract.contractCarModel || '차종 미입력';
+      const amount = contract.contractAmount ? `${Number(contract.contractAmount).toLocaleString('ko-KR')} 원` : '금액 미입력';
+      const status = contract.contractStatus || '상태 미입력';
 
-      // [수정] 요청 14: target.id -> targetId
-      case 'toggleCustomerInfoBtn':
-        e.preventDefault();
-        // ★ panelElement 내부에서 #customerInfoGroup 찾기
-        const infoGroup = panelElement.querySelector('#customerInfoGroup');
-        if (infoGroup) {
-          const isHidden = infoGroup.classList.toggle('hidden');
-          // [수정] target -> targetButton
-          targetButton.textContent = isHidden ? '상세 정보 보이기' : '상세 정보 숨기기';
-        }
-        break; 
-
-      // --- 로그 패널(.detail-log-pane) 버튼 ---
-      case 'addLogBtn':
-         // ★ handleAddLog는 .detail-log-pane을 인자로 받아야 함
-         const logPanel = panelElement.querySelector('.detail-log-pane');
-         if (logPanel) {
-           handleAddLog(logPanel, assignmentId);
-         }
-        break;
-    }
-  });
-
-  // [삭제] Task 5: contractStatus <select> 리스너 (contractInfoSection이 삭제되었으므로)
-  
-  // --- [신규] Task 9: 신규 계약 모달 이벤트 리스너 ---
-  // [수정] 요청 14: openModalBtn은 이제 panelElement(상세 패널) 기준이 아닌
-  // document(문서 전체) 기준으로 찾아야 함 (h2 안에 있으므로)
-  const addContractModal = document.getElementById('addContractModal');
-  const openModalBtn = document.getElementById('openAddContractModalBtn'); // [수정]
-  const cancelModalBtn = document.getElementById('cancelAddContractBtn');
-  const saveModalBtn = document.getElementById('saveNewContractBtn');
-
-  const clearContractModal = () => {
-      addContractModal.querySelector('#modalContractDate').value = '';
-      addContractModal.querySelector('#modalContractCarModel').value = '';
-      addContractModal.querySelector('#modalContractAmount').value = '';
-      addContractModal.querySelector('#modalContractTerm').value = '';
-      // addContractModal.querySelector('#modalContractStatus').value = '진행중'; // 기본값
-      addContractModal.querySelector('#modalContractSummary').value = '';
-  };
-
-  // 모달 열기
-  if (openModalBtn) {
-    // [수정] 요청 14: 리스너 부착 방식 변경 (이벤트 위임 사용 안함)
-    openModalBtn.addEventListener('click', (e) => {
-      e.preventDefault();
-      e.stopPropagation(); // h2 클릭 이벤트 방지
-      if (!currentAssignmentId) {
-        showErrorModal("고객이 선택되지 않았습니다.");
-        return;
-      }
-      clearContractModal(); // 모달 초기화
-      addContractModal.classList.remove('hidden');
+      li.innerHTML = `
+        <div style="flex: 1; display: flex; flex-direction: column;">
+          <span style="font-weight: bold; font-size: 1.05rem;">${escapeHtml(car)}</span>
+          <span style="font-size: 0.9rem; color: #555;">${escapeHtml(dateStr)} | ${escapeHtml(amount)}</span>
+        </div>
+        <div style="flex-shrink: 0;">
+           <span class="status-badge" style="font-size: 0.9rem;">${escapeHtml(status)}</span>
+        </div>
+      `;
+      ul.appendChild(li);
     });
   }
 
-  // 모달 취소
-  if (cancelModalBtn) {
-    cancelModalBtn.addEventListener('click', () => {
-      addContractModal.classList.add('hidden');
-    });
-  }
-
-  // 모달 저장
-  if (saveModalBtn) {
-    saveModalBtn.addEventListener('click', () => {
-      if (!currentAssignmentId) {
-        showErrorModal("저장할 고객 ID가 없습니다. (오류)");
-        return;
-      }
-
-      // 1. 데이터 수집
-      const contractData = {
-        contractDate: addContractModal.querySelector('#modalContractDate').value,
-        contractCarModel: addContractModal.querySelector('#modalContractCarModel').value.trim(),
-        contractAmount: addContractModal.querySelector('#modalContractAmount').value,
-        contractTerm: addContractModal.querySelector('#modalContractTerm').value.trim(),
-        // contractStatus: addContractModal.querySelector('#modalContractStatus').value,
-        contractSummary: addContractModal.querySelector('#modalContractSummary').value.trim()
-      };
-
-      // 2. 유효성 검사 (간단)
-      if (!contractData.contractDate || !contractData.contractCarModel) {
-        showErrorModal("계약 체결일과 계약 차종은 필수입니다.");
-        return;
-      }
-
-      console.log("Saving new contract:", currentAssignmentId, contractData);
-      showLoader();
-
-      // 3. 서버 호출 (google.script.run.addNewContract)
-      google.script.run
-        .withSuccessHandler(newContractList => {
-          hideLoader();
-          addContractModal.classList.add('hidden'); // 모달 닫기
-          
-          // 4. 성공 시 계약 목록 새로고침
-          const detailPanel = document.getElementById('customerDetailPanel');
-          renderContractList(newContractList, detailPanel);
-          
-          // (선택) 목록의 고객 상태도 새로고침 (예: 재계약 고객)
-          // (일단 이 기능은 보류)
-        })
-        .withFailureHandler(handleFailure)
-        .addNewContract(currentAssignmentId, contractData);
-    });
-  }
-}
-
-// ★ [수정] 뷰 전환 로직 복원
-function selectCustomer(assignmentId) {
-  showLoader();
-
-  google.script.run
-    .withSuccessHandler(result => {
-      console.log("서버에서 받은 응답:", result); 
-      
-      // ★ [수정] 뷰 전환
-      document.getElementById('listPanel').classList.add('hidden');
-      
-      const panelElement = document.getElementById('customerDetailPanel');
-      
-      // 1. 상세 정보 패널(좌측) 채우기
-      displayAssignmentDetails_Dynamic(result, panelElement); 
-      
-      // 2. 상담 기록 패널(우측) 채우기
-      const logPanel = panelElement.querySelector('.detail-log-pane');
-      if(logPanel) {
-        renderConsultationLogs_Dynamic(result.logs, logPanel);
-        
-        // 3. 새 상담 기록 입력창 비우기 (logPanel 내부)
-        const newLogContentEl = logPanel.querySelector('#newLogContent');
-        if (newLogContentEl) newLogContentEl.value = '';
-      }
-      
-      // [신규] Task 8: 계약 이력 패널(좌측) 채우기
-      renderContractList(result.contracts, panelElement);
-
-      panelElement.classList.remove('hidden'); // ★ 상세 뷰 표시
-
-      // 목록 활성화 (전환 후에도 유지)
-      document.querySelectorAll('#assignedCustomersList li').forEach(item => {
-        item.classList.toggle('active', item.dataset.assignmentId === assignmentId);
-      });
-      
-      // ★ [신규] 좌측 정보 패널의 스크롤을 맨 위로 이동
-      const infoPane = panelElement.querySelector('.detail-info-pane');
-      if (infoPane) infoPane.scrollTop = 0;
-      
-      hideLoader();
-    })
-    .withFailureHandler(handleFailure)
-    .getAssignmentDetails(assignmentId);
-}
-
-  function fetchCustomers(isNewSearch = false) {
-    if (!document.getElementById('loadMoreBtn')) return;
-
-    if (isNewSearch) {
-      currentOffset = 0; 
-      document.getElementById('loadMoreBtn').classList.add('hidden'); 
-      showSkeletonLoader(); 
-      currentFilters = {
-      searchTerm: document.getElementById('filterSearchTerm').value,
-      dateFrom: document.getElementById('filterAssignmentDateFrom').value,
-      dateTo: document.getElementById('filterAssignmentDateTo').value,
-      customerStatus: document.getElementById('filterCustomerStatus').value,
-      // [수정] Task 2: contractStatus 사용 중지
-      // contractStatus: document.getElementById('filterContractStatus').value,
-      dbType: document.getElementById('filterDbType').value,
-      lastLogDateFrom: document.getElementById('filterLastLogDateFrom').value,
-      lastLogDateTo: document.getElementById('filterLastLogDateTo').value
-      };
-    } else {
-      currentOffset += PAGE_SIZE;
-      document.getElementById('loadMoreBtn').disabled = true; 
-    }
-
-    const filtersToSend = {
-      ...currentFilters,
-      limit: PAGE_SIZE,
-      offset: currentOffset 
-    };
-
-    if (!isNewSearch) {
-      showLoader();
-    }
-    
-    google.script.run
-      .withSuccessHandler(result => {
-        if (isNewSearch) {
-        } else {
-          hideLoader();
-        }
-        
-        totalCustomerCount = result.totalCount; 
-        displayAssignedCustomers(result.customers, isNewSearch);
-      })
-      .withFailureHandler(error => {
-        handleFailure(error);
-        if (isNewSearch) {
-          document.getElementById('assignedCustomersList').innerHTML = '<li>오류가 발생했습니다. 필터를 다시 적용해주세요.</li>';
-        }
-        if (!isNewSearch) document.getElementById('loadMoreBtn').disabled = false;
-      })
-      .getAssignedCustomers(filtersToSend);
-  }
-  
   function showSkeletonLoader() {
     const ul = document.getElementById('assignedCustomersList');
     if (!ul) return; 
@@ -784,406 +417,536 @@ function selectCustomer(assignmentId) {
     for (let i = 0; i < 5; i++) { 
       const li = document.createElement('li');
       li.className = 'skeleton-li';
-      li.innerHTML = `
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-          <div class="skeleton-item line-1"></div>
-          <div class="skeleton-item" style="height: 20px; width: 60px;"></div>
-        </div>
-        <div class="skeleton-item line-2"></div>
-        <div class="skeleton-item line-3"></div>
-      `;
+      li.innerHTML = `<div class="skeleton-item line-1" style="height:20px; width:100%"></div>`;
       ul.appendChild(li);
     }
   }
 
-document.addEventListener('DOMContentLoaded', () => {
+  function displayAssignmentDetails_Dynamic(result, panelElement) {
+    if (!panelElement || !result || !result.assignment) return;
+    const assignment = result.assignment;
+    currentAssignmentId = assignment.assignmentId; 
 
-  const SCRIPT_URL = document.body.dataset.scriptUrl; 
+    const setElementValue = (id, value) => {
+      const element = panelElement.querySelector('#' + id);
+      if (element) {
+        if (element.type === 'date' && value) {
+           try { element.value = value.split('T')[0]; } catch (e) { element.value = ''; }
+        } else if (element.tagName === 'SPAN') {
+          element.textContent = value || ''; 
+        } else {
+          element.value = value || '';
+        }
+        if (element.tagName === 'SELECT') {
+           element.classList.toggle('placeholder', element.value === "");
+        }
+      }
+    };
 
-  // ★ [수정] 상세 패널 리스너 (뷰 전환 로직 포함)
-  attachDetailPanelListeners(); 
+    setElementValue('detailAssignmentId', assignment.assignmentId);
+    setElementValue('detailCustomerPhoneNumber', assignment.customerPhoneNumber ? formatPhoneNumber_Client(assignment.customerPhoneNumber) : ''); 
+    setElementValue('detailDbType', assignment.dbType); 
+    setElementValue('detailAssignmentDate', assignment.assignmentDate ? assignment.assignmentDate.split('T')[0] : '');
+    setElementValue('leadSource', assignment.leadSource);
+    setElementValue('customerType', assignment.customerType);
+    setElementValue('gender', assignment.gender);
+    setElementValue('ageGroup', assignment.ageGroup);
+    
+    setElementValue('addressCity', assignment.addressCity);
+    loadDistricts(assignment.addressCity, assignment.addressDistrict); // District 로드
+    
+    setElementValue('incomeType', assignment.incomeType);
+    setElementValue('creditInfo', assignment.creditInfo);
+    setElementValue('occupation', assignment.occupation); // 추가됨
 
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') {
-      // ★ [신규] Escape 키로 목록으로 돌아가기
-      const dynamicPanel = document.getElementById('customerDetailPanel');
-      if (dynamicPanel && !dynamicPanel.classList.contains('hidden')) { 
-        dynamicPanel.querySelector('#backToListBtn').click();
+    setElementValue('interestedCarModel', assignment.interestedCarModel);
+    setElementValue('comparisonCarModel', assignment.comparisonCarModel);
+    setElementValue('ownedCarModel', assignment.ownedCarModel);
+    setElementValue('carUsage', assignment.carUsage);
+    setElementValue('drivingDistance', assignment.drivingDistance);
+    setElementValue('driverScope', assignment.driverScope);
+
+    setElementValue('expectedContractTiming', assignment.expectedContractTiming);
+    setElementValue('desiredContractTerm', assignment.desiredContractTerm);
+    setElementValue('desiredInitialCostType', assignment.desiredInitialCostType);
+    setElementValue('maintenanceServiceLevel', assignment.maintenanceServiceLevel);
+    setElementValue('salesCondition', assignment.salesCondition);
+    setElementValue('isRepurchase', assignment.isRepurchase);
+    setElementValue('paymentMethod', assignment.paymentMethod);
+
+    setElementValue('customerStatus', assignment.customerStatus);
+    setElementValue('customerMemo', assignment.customerMemo);
+    setElementValue('quoteNumber', assignment.quoteNumber);
+    setElementValue('approvalNumber', assignment.approvalNumber);
+
+    const detailTitleText = panelElement.querySelector('#detailCustomerNameText');
+    if (detailTitleText) {
+      detailTitleText.textContent = assignment.customerName ? `${assignment.customerName}` : '고객 상세 정보';
+    }
+  }
+
+  // ============================================================================
+  // [6] Supabase API 연동 함수 (Core Logic)
+  // ============================================================================
+
+  async function fetchCustomers(isNewSearch = false) {
+    if (!document.getElementById('loadMoreBtn')) return;
+
+    if (isNewSearch) {
+      currentOffset = 0; 
+      document.getElementById('loadMoreBtn').classList.add('hidden'); 
+      showSkeletonLoader(); 
+      currentFilters = {
+        searchTerm: document.getElementById('filterSearchTerm').value,
+        dateFrom: document.getElementById('filterAssignmentDateFrom').value,
+        dateTo: document.getElementById('filterAssignmentDateTo').value,
+        customerStatus: document.getElementById('filterCustomerStatus').value,
+        dbType: document.getElementById('filterDbType').value
+      };
+    } else {
+      currentOffset += PAGE_SIZE;
+      document.getElementById('loadMoreBtn').disabled = true; 
+    }
+
+    try {
+      if (!isNewSearch) showLoader();
+
+      let query = supabase
+        .from('customers')
+        .select('*', { count: 'exact' })
+        .range(currentOffset, currentOffset + PAGE_SIZE - 1)
+        .order('assignment_date', { ascending: false });
+
+      // 필터 적용
+      if (currentFilters.searchTerm) {
+        const term = currentFilters.searchTerm;
+        query = query.or(`customer_name.ilike.%${term}%,customer_phone.ilike.%${term}%`);
+      }
+      if (currentFilters.customerStatus) {
+        query = query.eq('customer_status', currentFilters.customerStatus);
+      }
+      if (currentFilters.dbType) {
+        query = query.eq('db_type', currentFilters.dbType);
+      }
+      if (currentFilters.dateFrom) {
+        query = query.gte('assignment_date', currentFilters.dateFrom);
+      }
+      if (currentFilters.dateTo) {
+        const nextDay = new Date(currentFilters.dateTo);
+        nextDay.setDate(nextDay.getDate() + 1);
+        query = query.lt('assignment_date', nextDay.toISOString());
       }
       
-      // [신규] Task 9: 모달도 닫기
-      const addContractModal = document.getElementById('addContractModal');
-      if (addContractModal && !addContractModal.classList.contains('hidden')) {
-        addContractModal.querySelector('#cancelAddContractBtn').click();
+      // 내 담당 고객만 조회
+      // query = query.eq('assigned_to', CURRENT_USER_NAME);
+
+      const { data, error, count } = await query;
+      if (error) throw error;
+
+      if (!isNewSearch) hideLoader();
+      totalCustomerCount = count;
+      
+      const uiCustomers = data.map(toUiData);
+      displayAssignedCustomers(uiCustomers, isNewSearch);
+
+    } catch (error) {
+      handleFailure(error);
+      if (isNewSearch) document.getElementById('assignedCustomersList').innerHTML = '<li>조회 실패</li>';
+      if (!isNewSearch) document.getElementById('loadMoreBtn').disabled = false;
+    }
+  }
+
+  async function selectCustomer(assignmentId) {
+    showLoader();
+    try {
+      // 1. 고객 상세
+      const { data: customerData, error: custError } = await supabase
+        .from('customers').select('*').eq('assignment_id', assignmentId).single();
+      if (custError) throw custError;
+
+      // 2. 상담 로그
+      const { data: logsData, error: logError } = await supabase
+        .from('consultation_logs').select('*').eq('assignment_id', assignmentId).order('log_timestamp', { ascending: false });
+      if (logError) throw logError;
+
+      // 3. 계약 이력
+      const { data: contractsData, error: contError } = await supabase
+        .from('contracts').select('*').eq('assignment_id', assignmentId).order('contract_date', { ascending: false });
+      if (contError) throw contError;
+
+      const result = {
+        assignment: toUiData(customerData),
+        logs: logsData.map(log => ({
+          logId: log.log_id,
+          assignmentId: log.assignment_id,
+          logContent: log.log_content,
+          logTimestamp: log.log_timestamp,
+          userName: log.user_name
+        })),
+        contracts: contractsData.map(c => ({
+          contractId: c.contract_id,
+          contractDate: c.contract_date,
+          contractCarModel: c.contract_car_model,
+          contractAmount: c.contract_amount,
+          contractStatus: c.contract_status,
+          contractSummary: c.contract_summary
+        }))
+      };
+
+      // 뷰 전환 및 데이터 표시
+      document.getElementById('listPanel').classList.add('hidden');
+      const panelElement = document.getElementById('customerDetailPanel');
+      
+      displayAssignmentDetails_Dynamic(result, panelElement); 
+      
+      const logPanel = panelElement.querySelector('.detail-log-pane');
+      if(logPanel) {
+        renderConsultationLogs_Dynamic(result.logs, logPanel);
+        const newLogContentEl = logPanel.querySelector('#newLogContent');
+        if (newLogContentEl) newLogContentEl.value = '';
       }
-      const addCustomerModal = document.getElementById('addCustomerModal');
-      if (addCustomerModal && !addCustomerModal.classList.contains('hidden')) {
-        addCustomerModal.querySelector('#cancelAddCustomerBtn').click();
-      }
+      
+      renderContractList(result.contracts, panelElement);
+      panelElement.classList.remove('hidden');
+      
+      document.querySelectorAll('#assignedCustomersList li').forEach(item => {
+        item.classList.toggle('active', item.dataset.assignmentId === assignmentId);
+      });
+      
+      const infoPane = panelElement.querySelector('.detail-info-pane');
+      if (infoPane) infoPane.scrollTop = 0;
+      
+      hideLoader();
+
+    } catch (error) {
+      handleFailure(error);
+    }
+  }
+
+  // 7.1 고객 정보 업데이트
+  async function handleSaveCustomerDetails(panelElement, assignmentId, saveBtn) {
+    if (!assignmentId) return;
+    const getVal = (id) => {
+      const el = panelElement.querySelector('#' + id);
+      return el ? el.value.trim() : null;
+    };
+
+    const updates = {
+      customer_type: getVal('customerType'),
+      gender: getVal('gender'),
+      age_group: getVal('ageGroup'),
+      address_city: getVal('addressCity'),
+      address_district: getVal('addressDistrict'),
+      income_type: getVal('incomeType'),
+      credit_info: getVal('creditInfo'),
+      interested_car_model: getVal('interestedCarModel'),
+      comparison_car_model: getVal('comparisonCarModel'),
+      owned_car_model: getVal('ownedCarModel'),
+      car_usage: getVal('carUsage'),
+      driver_scope: getVal('driverScope'),
+      driving_distance: getVal('drivingDistance'),
+      expected_contract_timing: getVal('expectedContractTiming'),
+      desired_contract_term: getVal('desiredContractTerm'),
+      desired_initial_cost_type: getVal('desiredInitialCostType'),
+      maintenance_service_level: getVal('maintenanceServiceLevel'),
+      is_repurchase: getVal('isRepurchase'),
+      payment_method: getVal('paymentMethod'),
+      customer_status: getVal('customerStatus'),
+      customer_memo: getVal('customerMemo'),
+      quote_number: getVal('quoteNumber'),
+      approval_number: getVal('approvalNumber'),
+      lead_source: getVal('leadSource'),
+      occupation: getVal('occupation'),
+      updated_at: new Date().toISOString()
+    };
+
+    showLoader();
+    try {
+      const { error } = await supabase.from('customers').update(updates).eq('assignment_id', assignmentId);
+      if (error) throw error;
+      
+      await selectCustomer(assignmentId); // UI 갱신
+      showSaveFeedback(saveBtn);
+    } catch (error) {
+      handleFailure(error);
+    }
+  }
+
+  // 7.2 전화번호 저장 (개별 저장 버튼용)
+  async function handleSavePhoneNumber(panelElement, assignmentId, saveBtn) {
+    if (!assignmentId) return;
+    const phoneInput = panelElement.querySelector('#detailCustomerPhoneNumber');
+    const newPhone = formatPhoneNumber_Client(phoneInput.value);
+
+    showLoader();
+    try {
+      const { error } = await supabase.from('customers')
+        .update({ customer_phone: newPhone }).eq('assignment_id', assignmentId);
+      if (error) throw error;
+      
+      await selectCustomer(assignmentId);
+      showSaveFeedback(saveBtn);
+    } catch (error) {
+      handleFailure(error);
+    }
+  }
+
+  // 7.3 상담 로그 추가
+  async function handleAddLog(panelElement, assignmentId) {
+    if (!assignmentId) return;
+    const contentEl = panelElement.querySelector('#newLogContent');
+    const content = contentEl.value.trim();
+    if (!content) {
+      showErrorModal("기록 내용을 입력해주세요.");
+      return;
     }
     
-    if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
-      e.preventDefault();
-      const searchBox = document.getElementById('filterSearchTerm');
-      if (searchBox) searchBox.focus(); 
-    }
-  });
-  
-  window.addEventListener('offline', () => {
-    showErrorModal("인터넷 연결이 끊어졌습니다. 변경 사항이 저장되지 않을 수 있습니다.");
-  });
+    showLoader();
+    try {
+      const newLog = {
+        log_id: 'LOG_' + Date.now() + Math.random().toString(36).substr(2,5),
+        assignment_id: assignmentId,
+        log_content: content,
+        user_name: CURRENT_USER_NAME,
+        log_timestamp: new Date().toISOString()
+      };
 
-  // -----------------------------------
-  // ★ [수정] 뷰 1: 목록 화면 (List View) 로직
-  // -----------------------------------
-  
-  const listUl = document.getElementById('assignedCustomersList');
-  const filterBtn = document.getElementById('applyFilterBtn');
-  const resetBtn = document.getElementById('resetFilterBtn');
-  const loadMoreBtn = document.getElementById('loadMoreBtn');
-  const addCustomerModal = document.getElementById('addCustomerModal');
-  const addCustomerBtn = document.getElementById('openAddCustomerModalBtn');
-  const cancelAddBtn = document.getElementById('cancelAddCustomerBtn');
-  const saveNewBtn = document.getElementById('saveNewCustomerBtn');
-  const newNameInput = document.getElementById('newCustomerName');
-  const newPhoneInput = document.getElementById('newCustomerPhoneNumber');
+      const { error } = await supabase.from('consultation_logs').insert([newLog]);
+      if (error) throw error;
 
-  // 1. 메인 목록(우측) 클릭
-  listUl.addEventListener('click', e => {
-    const li = e.target.closest('li');
-    if (li && li.dataset.assignmentId) {
-      const assignmentId = li.dataset.assignmentId;
-      selectCustomer(assignmentId); // ★ 뷰 전환 함수 호출
+      contentEl.value = '';
+      // 로그 부분 새로고침
+      const { data: logsData } = await supabase.from('consultation_logs')
+        .select('*').eq('assignment_id', assignmentId).order('log_timestamp', { ascending: false });
+        
+      const uiLogs = logsData.map(log => ({
+          logId: log.log_id,
+          assignmentId: log.assignment_id,
+          logContent: log.log_content,
+          logTimestamp: log.log_timestamp,
+          userName: log.user_name
+      }));
+      
+      renderConsultationLogs_Dynamic(uiLogs, panelElement);
+      hideLoader();
+    } catch (error) {
+      handleFailure(error);
     }
-  });
-  
-  listUl.addEventListener('keydown', e => {
-    if (e.key === 'Enter' || e.key === ' ') {
-      const li = e.target.closest('li');
-      if (li && li.dataset.assignmentId) {
-        e.preventDefault();
-        const assignmentId = li.dataset.assignmentId;
-        selectCustomer(assignmentId); // ★ 뷰 전환 함수 호출
-      }
-    }
-  });
-  
-  // 2. [신규] ToDo 목록(좌측) 클릭 (기능은 동일하게 selectCustomer 호출)
-  const todoListUl = document.getElementById('todoCustomersList');
-  if (todoListUl) {
-      todoListUl.addEventListener('click', e => {
-        const li = e.target.closest('li[data-assignment-id]'); // ★ data-assignment-id가 있는 li만
-        if (li) {
-            const assignmentId = li.dataset.assignmentId;
-            selectCustomer(assignmentId);
+  }
+
+  // ============================================================================
+  // [8] 이벤트 리스너 (DOMContentLoaded)
+  // ============================================================================
+  document.addEventListener('DOMContentLoaded', () => {
+    // 1. 상세 패널 이벤트 위임
+    const detailPanel = document.getElementById('customerDetailPanel');
+    if (detailPanel) {
+      detailPanel.addEventListener('click', e => {
+        const target = e.target;
+        const targetButton = target.closest('button');
+        const targetId = targetButton ? targetButton.id : target.id;
+        
+        if (!targetId) return;
+        if (targetId === 'backToListBtn') {
+          e.preventDefault();
+          detailPanel.classList.add('hidden');
+          document.getElementById('listPanel').classList.remove('hidden');
+          document.querySelectorAll('#assignedCustomersList li.active').forEach(li => li.classList.remove('active'));
+          currentAssignmentId = null;
+          return;
+        }
+        if (targetId === 'toggleCustomerInfoBtn') {
+          e.preventDefault();
+          const group = detailPanel.querySelector('#customerInfoGroup');
+          if(group) {
+            const isHidden = group.classList.toggle('hidden');
+            targetButton.textContent = isHidden ? '상세 정보 보이기' : '상세 정보 숨기기';
+          }
+          return;
+        }
+
+        if (!currentAssignmentId) return;
+
+        // 저장 로직
+        if (targetId === 'saveCustomerDetailsBtn') handleSaveCustomerDetails(detailPanel, currentAssignmentId, targetButton);
+        else if (targetId === 'savePhoneNumberBtn') handleSavePhoneNumber(detailPanel, currentAssignmentId, targetButton);
+        else if (targetId === 'addLogBtn') {
+          const logPanel = detailPanel.querySelector('.detail-log-pane');
+          if(logPanel) handleAddLog(logPanel, currentAssignmentId);
         }
       });
-      // (ToDo 목록에 대한 키보드 탐색도 동일하게 추가할 수 있습니다)
-  }
-
-
-  // --- 필터, 더보기, 신규 고객 추가 리스너 (변경 없음) ---
-  filterBtn.addEventListener('click', () => fetchCustomers(true));
-
-  resetBtn.addEventListener('click', () => {
-    document.getElementById('filterSearchTerm').value = '';
-    document.getElementById('filterDbType').value = '';
-    document.getElementById('filterCustomerStatus').value = '';
-    // document.getElementById('filterContractStatus').value = ''; // [수정] Task 2: 이 필터 무시함
-
-    // ▼▼▼ [수정] 3개월 전 날짜 설정 로직 (초기 로드와 동일하게) ▼▼▼
-    const today = new Date();
-    const threeMonthsAgoStr = new Date(new Date().setMonth(today.getMonth() - 3)).toISOString().split('T')[0];
-    
-    document.getElementById('filterAssignmentDateFrom').value = threeMonthsAgoStr;
-    document.getElementById('filterAssignmentDateTo').value = '';
-    
-    // 2. [수정] 마지막 상담일 필터 초기화
-    document.getElementById('filterLastLogDateFrom').value = threeMonthsAgoStr; // 3개월 전으로 설정
-    document.getElementById('filterLastLogDateTo').value = ''; // 비우기
-    fetchCustomers(true); 
-  });
-  // ▼▼▼ [신규] 필터 영역에서 Enter 키로 검색 실행 ▼▼▼
-  const filterPanel = document.querySelector('.filter-panel');
-  if (filterPanel) {
-    filterPanel.addEventListener('keydown', (event) => {
-      // 1. Enter 키가 눌렸는지 확인
-      if (event.key === 'Enter') {
-        // 2. 이벤트가 발생한 태그가 input 또는 select인지 확인
-        const targetTag = event.target.tagName.toLowerCase();
-        if (targetTag === 'input' || targetTag === 'select') {
-          
-          event.preventDefault(); // 기본 동작(예: 폼 제출) 방지
-          
-          // 3. '검색' 버튼(applyFilterBtn)을 찾아서 강제로 클릭
-          const filterBtn = document.getElementById('applyFilterBtn');
-          if (filterBtn && !filterBtn.disabled) {
-            filterBtn.click();
-          }
-        }
+      
+      // 시/도 선택 이벤트
+      const citySelect = document.getElementById('addressCity');
+      if (citySelect) {
+        citySelect.addEventListener('change', (e) => loadDistricts(e.target.value));
       }
+    }
+
+    // 2. 목록 화면 이벤트
+    const listUl = document.getElementById('assignedCustomersList');
+    listUl.addEventListener('click', e => {
+      const li = e.target.closest('li');
+      if (li && li.dataset.assignmentId) selectCustomer(li.dataset.assignmentId);
     });
-  }
 
-  // ▼▼▼ [신규] 모든 select 요소의 변경 감지하여 색상 처리 ▼▼▼
-  document.body.addEventListener('change', (e) => {
-    if (e.target.tagName === 'SELECT') {
-      if (e.target.value === "") {
-        e.target.classList.add('placeholder');
-      } else {
-        e.target.classList.remove('placeholder');
-      }
-    }
-  });
-  loadMoreBtn.addEventListener('click', () => fetchCustomers(false));
+    // 3. 필터 및 버튼 이벤트
+    document.getElementById('applyFilterBtn').addEventListener('click', () => fetchCustomers(true));
+    document.getElementById('loadMoreBtn').addEventListener('click', () => fetchCustomers(false));
+    
+    document.getElementById('resetFilterBtn').addEventListener('click', () => {
+      document.getElementById('filterSearchTerm').value = '';
+      document.getElementById('filterDbType').value = '';
+      document.getElementById('filterCustomerStatus').value = '';
+      const today = new Date();
+      const threeMonthsAgo = new Date(new Date().setMonth(today.getMonth() - 3)).toISOString().split('T')[0];
+      document.getElementById('filterAssignmentDateFrom').value = threeMonthsAgo;
+      document.getElementById('filterAssignmentDateTo').value = '';
+      fetchCustomers(true);
+    });
 
-  newPhoneInput.addEventListener('blur', (event) => {
-    event.target.value = formatPhoneNumber_Client(event.target.value);
-  });
-  addCustomerBtn.addEventListener('click', () => addCustomerModal.classList.remove('hidden'));
-  cancelAddBtn.addEventListener('click', () => {
-    addCustomerModal.classList.add('hidden');
-    newNameInput.value = ''; newPhoneInput.value = '';
-  });
+    // 4. 신규 고객 추가 (모달)
+    const addCustomerModal = document.getElementById('addCustomerModal');
+    document.getElementById('openAddCustomerModalBtn').addEventListener('click', () => addCustomerModal.classList.remove('hidden'));
+    document.getElementById('cancelAddCustomerBtn').addEventListener('click', () => {
+      addCustomerModal.classList.add('hidden');
+      document.getElementById('newCustomerName').value = '';
+      document.getElementById('newCustomerPhoneNumber').value = '';
+    });
 
-  saveNewBtn.addEventListener('click', () => {
-    const name = newNameInput.value.trim();
-    const phone = newPhoneInput.value.trim();
-    if (!name) { showErrorModal("고객명은 필수입니다."); return; }
-    if (phone) {
-    const digits = phone.replace(/\D/g, '');
-    if (digits.length > 0 && (digits.length < 9 || digits.length > 11)) {
-      showErrorModal("올바른 전화번호 형식이 아닙니다. (9~11자리 숫자)"); return;
-    }
-    }
-    showLoader();
-    google.script.run
-    .withSuccessHandler(newCustomer => {
+    document.getElementById('saveNewCustomerBtn').addEventListener('click', async () => {
+      const name = document.getElementById('newCustomerName').value.trim();
+      const phone = document.getElementById('newCustomerPhoneNumber').value.trim();
+      const dbType = document.getElementById('newDbType').value;
+      
+      if (!name) { showErrorModal("고객명은 필수입니다."); return; }
+      
+      showLoader();
+      try {
+        const timestamp = Date.now();
+        const newCustomer = {
+          assignment_id: "A_" + timestamp,
+          customer_id: "C_" + timestamp,
+          customer_name: name,
+          customer_phone: phone,
+          db_type: dbType,
+          assigned_to: CURRENT_USER_NAME,
+          assignment_date: new Date().toISOString(),
+          customer_status: "배정됨"
+        };
+        
+        const { error } = await supabase.from('customers').insert([newCustomer]);
+        if (error) throw error;
+        
         hideLoader();
-        const ul = document.getElementById('assignedCustomersList');
-        const li = buildCustomerLi(newCustomer); 
-        ul.prepend(li); 
-        const noCustomerLi = ul.querySelector('li:first-child:not([data-assignment-id])');
-        if (noCustomerLi && ul.children.length > 1) { 
-          noCustomerLi.remove();
-        }
         addCustomerModal.classList.add('hidden');
-        newNameInput.value = '';
-        newPhoneInput.value = '';
-        // ★ [신규] TODO: ToDo 목록에도 즉시 추가/제거 로직 필요
-    })
-    .withFailureHandler(handleFailure)
-    .addNewCustomer({
-      customerName: name,
-      customerPhoneNumber: phone,
-      dbType: document.getElementById('newDbType').value
+        document.getElementById('newCustomerName').value = '';
+        fetchCustomers(true); // 목록 새로고침
+      } catch (error) {
+        handleFailure(error);
+      }
     });
+
+    // 5. 신규 계약 추가 (모달)
+    const addContractModal = document.getElementById('addContractModal');
+    document.getElementById('openAddContractModalBtn').addEventListener('click', (e) => {
+      e.preventDefault(); e.stopPropagation();
+      if (!currentAssignmentId) { showErrorModal("고객이 선택되지 않았습니다."); return; }
+      addContractModal.classList.remove('hidden');
+      // 초기화
+      document.getElementById('modalContractDate').value = '';
+      document.getElementById('modalContractCarModel').value = '';
+      document.getElementById('modalContractAmount').value = '';
+      document.getElementById('modalContractTerm').value = '';
+      document.getElementById('modalContractSummary').value = '';
+    });
+    document.getElementById('cancelAddContractBtn').addEventListener('click', () => addContractModal.classList.add('hidden'));
+
+    document.getElementById('saveNewContractBtn').addEventListener('click', async () => {
+      const date = document.getElementById('modalContractDate').value;
+      const car = document.getElementById('modalContractCarModel').value.trim();
+      const amount = document.getElementById('modalContractAmount').value;
+      const term = document.getElementById('modalContractTerm').value.trim();
+      const summary = document.getElementById('modalContractSummary').value.trim();
+
+      if (!date || !car) { showErrorModal("계약일과 차종은 필수입니다."); return; }
+
+      showLoader();
+      try {
+        const newContract = {
+          contract_id: "CN_" + Date.now(),
+          assignment_id: currentAssignmentId,
+          contract_date: date,
+          contract_car_model: car,
+          contract_amount: Number(amount) || 0,
+          contract_term: term,
+          contract_summary: summary,
+          contract_status: '진행중'
+        };
+        const { error } = await supabase.from('contracts').insert([newContract]);
+        if (error) throw error;
+        
+        hideLoader();
+        addContractModal.classList.add('hidden');
+        
+        // 계약 목록 새로고침 (전체 갱신 대신 계약만)
+        const { data: contractsData } = await supabase.from('contracts')
+          .select('*').eq('assignment_id', currentAssignmentId).order('contract_date', { ascending: false });
+        
+        const uiContracts = contractsData.map(c => ({
+          contractId: c.contract_id,
+          contractDate: c.contract_date,
+          contractCarModel: c.contract_car_model,
+          contractAmount: c.contract_amount,
+          contractStatus: c.contract_status,
+          contractSummary: c.contract_summary
+        }));
+        renderContractList(uiContracts, document.getElementById('customerDetailPanel'));
+
+      } catch (error) {
+        handleFailure(error);
+      }
+    });
+
+    // 6. 키보드 이벤트
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        if (!addContractModal.classList.contains('hidden')) addContractModal.classList.add('hidden');
+        else if (!addCustomerModal.classList.contains('hidden')) addCustomerModal.classList.add('hidden');
+        else if (!document.getElementById('customerDetailPanel').classList.contains('hidden')) {
+          document.getElementById('backToListBtn').click();
+        }
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+        e.preventDefault();
+        const searchBox = document.getElementById('filterSearchTerm');
+        if (searchBox) searchBox.focus(); 
+      }
+    });
+
+    // 필터 엔터키 처리
+    const filterPanel = document.querySelector('.filter-panel');
+    if (filterPanel) {
+      filterPanel.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT')) {
+          e.preventDefault();
+          document.getElementById('applyFilterBtn').click();
+        }
+      });
+    }
+
+    // 전화번호 자동 포맷
+    document.getElementById('newCustomerPhoneNumber').addEventListener('blur', (e) => {
+      e.target.value = formatPhoneNumber_Client(e.target.value);
+    });
+
+    // 7. 초기화 실행
+    populateSelectOptions(CONFIG);
+    const today = new Date();
+    const threeMonthsAgo = new Date(new Date().setMonth(today.getMonth() - 3)).toISOString().split('T')[0];
+    document.getElementById('filterAssignmentDateFrom').value = threeMonthsAgo;
+    document.getElementById('filterLastLogDateFrom').value = threeMonthsAgo;
+
+    console.log("🚀 App Initialized with Supabase");
+    fetchCustomers(true);
   });
-
-  // --- 초기 로드 (변경 없음) ---
-  // ★ 참고: data-view 속성은 Code.gs의 doGet에서 'list' 또는 'detail'을 받지만,
-  // 이 JS는 해당 값을 무시하고 항상 'list' 뷰를 먼저 로드하도록 구성되어 있습니다.
-  const today = new Date();
-  const threeMonthsAgoStr = new Date(new Date().setMonth(today.getMonth() - 3)).toISOString().split('T')[0];
-
-  // 1. 배정일 시작 (기존 로직)
-  document.getElementById('filterAssignmentDateFrom').value = threeMonthsAgoStr;
-  
-  // 2. [신규] 마지막 상담일 시작
-  document.getElementById('filterLastLogDateFrom').value = threeMonthsAgoStr;
-  // ▲▲▲ [수정] ▲▲▲
-
-  showSkeletonLoader();
-
-  console.log("🚀 [Client] Calling getConfigurations..."); 
-
-  google.script.run
-    .withSuccessHandler(config => {
-      console.log("✅ getConfigurations SUCCESS:", config); 
-      populateSelectOptions(config); 
-      fetchCustomers(true); 
-      // ★ [신규] TODO: 여기에 fetchTodoCustomers() 호출 추가 필요
-      // 예: fetchTodoCustomers();
-    })
-    .withFailureHandler(error => {
-      handleFailure(error);
-      document.getElementById('assignedCustomersList').innerHTML = '<li>시스템 설정(Config) 로드에 실패했습니다.</li>';
-    })
-    .getConfigurations();
-  
-  // 주소(시/도) 변경 시 시/군/구 로드 리스너 부착
-  attachAddressListeners();
-});
-
-
-/**
- * 서버에서 특정 시/도에 해당하는 시/군/구 목록을 가져와 드롭다운을 채웁니다.
- * @param {string} selectedCity - 선택된 시/도 이름
- * @param {string} [valueToSelect] - (선택) 로드 후 자동으로 선택할 시/군/구 값
- */
-function loadDistricts(selectedCity, valueToSelect) {
-  // ★ [수정] #customerDetailPanel 내부에서 #addressDistrict 찾기
-  const districtSelect = document.getElementById('addressDistrict');
-  // [수정] index.html에서 addressDistrict 필드가 주석 처리(제거)되었을 수 있음
-  if (!districtSelect) return;
-
-  if (!selectedCity) {
-    districtSelect.innerHTML = '<option value="">-- 시/도를 먼저 선택 --</option>';
-    districtSelect.disabled = true;
-    return;
-  }
-
-  districtSelect.disabled = true; 
-  districtSelect.innerHTML = '<option value="">로딩 중...</option>';
-
-  google.script.run
-    .withSuccessHandler(districts => {
-      districtSelect.innerHTML = '<option value="">-- 선택 --</option>'; 
-      if (districts && districts.length > 0) {
-        districts.forEach(district => {
-          const option = document.createElement('option');
-          option.value = district;
-          option.textContent = district;
-          districtSelect.appendChild(option);
-        });
-        if (valueToSelect) {
-          districtSelect.value = valueToSelect;
-        }
-      } else {
-         districtSelect.innerHTML = '<option value="">-- 시/군/구 정보 없음 --</option>';
-      }
-      districtSelect.disabled = false; 
-    })
-    .withFailureHandler(error => {
-      console.error("Failed to load districts:", error);
-      districtSelect.innerHTML = '<option value="">-- 로드 실패 --</option>';
-      districtSelect.disabled = false;
-    })
-    .getDistrictsForCity(selectedCity);
-}
-
-/**
- * 주소(시/도) select 요소에 change 이벤트 리스너를 추가합니다.
- */
-function attachAddressListeners() {
-    // ★ [수정] #customerDetailPanel 내부에서 #addressCity 찾기
-    const citySelect = document.getElementById('addressCity');
-    if (citySelect) {
-        citySelect.addEventListener('change', (event) => {
-            const selectedCity = event.target.value;
-            loadDistricts(selectedCity); 
-        });
-    }
-}
-
-/**
- * [수정됨] 서버에서 받은 상세 데이터를 상세 정보 패널(좌측)의 각 UI 요소에 표시합니다.
- * (로그 렌더링 로직은 제거됨 -> selectCustomer로 이동)
- * (계약 목록 렌더링 로직도 제거됨 -> selectCustomer로 이동)
- * @param {object} result - 서버의 getAssignmentDetails 함수가 반환하는 객체 { assignment: {}, logs: [], contracts: [] }
- * @param {HTMLElement} panelElement - 상세 정보 패널 요소 (customerDetailPanel)
- */
-function displayAssignmentDetails_Dynamic(result, panelElement) {
-  if (!panelElement || !result || !result.assignment) {
-    console.error("Invalid data or panel element for displayAssignmentDetails_Dynamic.");
-    showErrorModal("상세 정보를 표시할 수 없습니다. (데이터 오류)");
-    return;
-  }
-
-  const assignment = result.assignment;
-  currentAssignmentId = assignment.assignmentId; 
-
-  console.log("Displaying details for:", assignment.assignmentId, assignment); 
-
-  // --- Helper 함수: ID로 요소 찾고 값 설정 (오류 방지 포함) ---
-  // ★ [수정] panelElement(.detail-panel) 내부에서 ID 검색
-  const setElementValue = (id, value) => {
-    const element = panelElement.querySelector('#' + id);
-    if (element) {
-      if (element.type === 'date' && value && typeof value === 'string') {
-        try {
-          element.value = value.split('T')[0];
-        } catch (e) {
-          console.warn(`Failed to parse date for element #${id}:`, value, e);
-          element.value = ''; 
-        }
-      } else if (element.tagName === 'SPAN') {
-        element.textContent = value !== null && value !== undefined ? value : ''; 
-      } else {
-        element.value = value !== null && value !== undefined ? value : '';
-      }
-
-      if (element.tagName === 'SELECT') {
-         if (element.value === "") {
-           element.classList.add('placeholder');
-         } else {
-           element.classList.remove('placeholder');
-         }
-      }
-    }
-  };
-
-  // --- 1. 기본 정보 ---
-  setElementValue('detailAssignmentId', assignment.assignmentId);
-  // [삭제] 요청 2: '고객명' span 삭제됨
-  // setElementValue('detailCustomerNameSpan', assignment.customerName); 
-  setElementValue('detailCustomerPhoneNumber', assignment.customerPhoneNumber ? formatPhoneNumber_Client(assignment.customerPhoneNumber) : ''); 
-  setElementValue('detailDbType', assignment.dbType); 
-  const assignDateStr = assignment.assignmentDate ? assignment.assignmentDate.split('T')[0] : '';
-  setElementValue('detailAssignmentDate', assignDateStr);
-  setElementValue('leadSource', assignment.leadSource);
-  setElementValue('customerType', assignment.customerType);
-  setElementValue('gender', assignment.gender);
-  setElementValue('ageGroup', assignment.ageGroup);
-  
-  // 주소 처리
-  setElementValue('addressCity', assignment.addressCity);
-  if (assignment.addressCity) {
-    loadDistricts(assignment.addressCity, assignment.addressDistrict); 
-  } else {
-    loadDistricts(''); 
-  }
-  
-  setElementValue('incomeType', assignment.incomeType);
-  setElementValue('creditInfo', assignment.creditInfo);
-
-  // --- 2. 고객 니즈 ---
-  setElementValue('interestedCarModel', assignment.interestedCarModel);
-  setElementValue('comparisonCarModel', assignment.comparisonCarModel);
-  setElementValue('ownedCarModel', assignment.ownedCarModel);
-  setElementValue('carUsage', assignment.carUsage);
-  setElementValue('drivingDistance', assignment.drivingDistance);
-  setElementValue('driverScope', assignment.driverScope);
-
-  // --- 3. 희망 계약 조건 ---
-  setElementValue('expectedContractTiming', assignment.expectedContractTiming);
-  setElementValue('desiredContractTerm', assignment.desiredContractTerm);
-  setElementValue('desiredInitialCostType', assignment.desiredInitialCostType);
-  setElementValue('maintenanceServiceLevel', assignment.maintenanceServiceLevel);
-  setElementValue('salesCondition', assignment.salesCondition);
-  setElementValue('isRepurchase', assignment.isRepurchase);
-  setElementValue('paymentMethod', assignment.paymentMethod);
-
-  // --- 4. 상담 / 계약 상태 ---
-  // [수정] 요청 2: '고객 상태'는 상단 그리드로 이동했으나 ID는 동일함
-  setElementValue('customerStatus', assignment.customerStatus);
-  // [삭제] 요청 1: '상담 상태' 필드 삭제됨
-  // setElementValue('consultationStatus', assignment.consultationStatus);
-  // [삭제] 1:N 변경으로 '계약 상태' 필드 삭제됨
-  // setElementValue('contractStatus', assignment.contractStatus);
-  
-  // ▼▼▼ [수정] 상단 '고객 메모' (목록 표시용) 값 설정 ▼▼▼
-  setElementValue('customerMemo', assignment.customerMemo);
-  // ▼▼▼ [신규] 견적번호, 승인번호 값 설정 ▼▼▼
-  setElementValue('quoteNumber', assignment.quoteNumber);
-  setElementValue('approvalNumber', assignment.approvalNumber);
-  // ▲▲▲ [신규] ▲▲▲
-
-  // --- 8. [신규] Task 8: 계약 목록 렌더링 (selectCustomer에서 처리) ---
-
-  // [수정] 요청 14: h2 자체가 아닌, 내부의 span(#detailCustomerNameText)의 텍스트를 변경
-  const detailTitleText = panelElement.querySelector('#detailCustomerNameText');
-  if (detailTitleText) {
-      detailTitleText.textContent = assignment.customerName ? `${assignment.customerName}` : '고객 상세 정보';
-  }
-}
