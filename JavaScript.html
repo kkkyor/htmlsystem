@@ -1,4 +1,3 @@
-
   // ============================================================================
   // [1] Supabase 설정 및 전역 변수
   // ============================================================================
@@ -10,10 +9,15 @@
   let session = null;
   let currentUserEmail = null;
   let currentUserName = "사용자";
+  
+  // 고객 목록용 변수
   let currentAssignmentId = null;
   let currentFilters = {};
   let currentOffset = 0;
   let totalCustomerCount = 0;
+  
+  // 계약 목록용 변수
+  let currentContractOffset = 0;
   const PAGE_SIZE = 30;
 
   const CONFIG = {
@@ -31,12 +35,6 @@
       customerStatus: ['배정됨', '연락 시도 중', '상담 진행 중', '견적 발송', '추가 정보 요청', '가망 고객', '심사 진행중', '심사 완료', '계약 진행중', '계약 완료', '출고 완료', '기존 고객', '상담 보류', '상담 이탈'],
       addressCities: ['서울특별시', '부산광역시', '대구광역시', '인천광역시', '광주광역시', '대전광역시', '울산광역시', '세종특별자치시', '경기도', '강원특별자치도', '충청북도', '충청남도', '전북특별자치도', '전라남도', '경상북도', '경상남도', '제주특별자치도']
     }
-  };
-
-  const DISTRICTS_MAP = {
-    '서울특별시': ['강남구', '강동구', '강북구', '강서구', '관악구', '광진구', '구로구', '금천구', '노원구', '도봉구', '동대문구', '동작구', '마포구', '서대문구', '서초구', '성동구', '성북구', '송파구', '양천구', '영등포구', '용산구', '은평구', '종로구', '중구', '중랑구'],
-    '경기도': ['수원시', '성남시', '의정부시', '안양시', '부천시', '광명시', '평택시', '동두천시', '안산시', '고양시', '과천시', '구리시', '남양주시', '오산시', '시흥시', '군포시', '의왕시', '하남시', '용인시', '파주시', '이천시', '안성시', '김포시', '화성시', '광주시', '양주시', '포천시', '여주시', '연천군', '가평군', '양평군'],
-    '부산광역시': ['중구', '서구', '동구', '영도구', '부산진구', '동래구', '남구', '북구', '해운대구', '사하구', '금정구', '강서구', '연제구', '수영구', '사상구', '기장군']
   };
 
   const loader = document.getElementById('loader');
@@ -60,7 +58,6 @@
     return phone;
   }
 
-  // ★ 날짜 포맷팅 함수 (YYYY-MM-DD)
   function formatDate(isoString) {
     if (!isoString) return '';
     try {
@@ -85,6 +82,41 @@
     setTimeout(() => { btn.textContent = origin; btn.disabled = false; }, 1500);
   }
 
+  // [1] 탭 전환 함수 (모던 스타일 적용 & 패널 제어)
+  function switchTab(mode) {
+    const customerPanel = document.getElementById('listPanel');
+    const contractPanel = document.getElementById('contractListPanel');
+    const custDetailPanel = document.getElementById('customerDetailPanel');
+    const contDetailPanel = document.getElementById('contractDetailPanel');
+    
+    // 1. 상세 패널들 모두 닫기
+    custDetailPanel.classList.add('hidden');
+    contDetailPanel.classList.add('hidden');
+    
+    const btnCust = document.getElementById('tabCustomerBtn');
+    const btnCont = document.getElementById('tabContractBtn');
+
+    if (mode === 'customer') {
+      customerPanel.classList.remove('hidden');
+      if(contractPanel) contractPanel.classList.add('hidden');
+      
+      // 클래스 토글 (CSS active 클래스 활용)
+      btnCust.classList.add('active'); 
+      btnCont.classList.remove('active');
+      
+      fetchCustomers(true); // 고객 목록 갱신
+      
+    } else {
+      customerPanel.classList.add('hidden');
+      if(contractPanel) contractPanel.classList.remove('hidden');
+      
+      btnCust.classList.remove('active');
+      btnCont.classList.add('active');
+      
+      fetchGlobalContracts(true); // 계약 목록 갱신
+    }
+  }
+
   // ============================================================================
   // [3] 데이터 변환 및 UI 렌더링
   // ============================================================================
@@ -104,7 +136,7 @@
       gender: dbData.gender,
       ageGroup: dbData.age_group,
       addressCity: dbData.address_city,
-      addressDistrict: dbData.address_district,
+      // addressDistrict 제거됨
       incomeType: dbData.income_type,
       creditInfo: dbData.credit_info,
       interestedCarModel: dbData.interested_car_model,
@@ -112,7 +144,7 @@
       ownedCarModel: dbData.owned_car_model,
       carUsage: dbData.car_usage,
       driverScope: dbData.driver_scope,
-      drivingDistance: dbData.driving_distance,
+      driving_distance: dbData.driving_distance,
       expectedContractTiming: dbData.expected_contract_timing,
       desiredContractTerm: dbData.desired_contract_term,
       desiredInitialCostType: dbData.desired_initial_cost_type,
@@ -124,31 +156,19 @@
       quoteNumber: dbData.quote_number,
       approvalNumber: dbData.approval_number,
       occupation: dbData.occupation,
-      // ★ 마지막 상담일 (DB에 컬럼이 있다면 매핑, 없다면 updated_at 대체)
       lastLogDate: dbData.last_log_date || dbData.updated_at 
     };
   }
 
   async function populateSelectOptions() {
-    const { data: dbTypeData } = await supabase
-      .from('db_types')
-      .select('type_name')
-      .eq('is_active', true)
-      .order('sort_order', { ascending: true });
-
+    const { data: dbTypeData } = await supabase.from('db_types').select('type_name').eq('is_active', true).order('sort_order', { ascending: true });
     let dbTypes = dbTypeData ? dbTypeData.map(i => i.type_name) : ['기타'];
     
     const populate = (id, opts) => {
       const el = document.getElementById(id);
-      if (!el) return;
-      const first = el.options[0];
-      el.innerHTML = '';
-      if (first) el.appendChild(first);
-      opts.forEach(v => {
-        const op = document.createElement('option');
-        op.value = v; op.textContent = v;
-        el.appendChild(op);
-      });
+      if (!el || el.tagName !== 'SELECT') return;
+      const first = el.options[0]; el.innerHTML = ''; if (first) el.appendChild(first);
+      opts.forEach(v => { const op = document.createElement('option'); op.value = v; op.textContent = v; el.appendChild(op); });
     };
 
     populate('filterDbType', dbTypes);
@@ -157,7 +177,6 @@
     const opts = CONFIG.selectOptions;
     populate('leadSource', opts.leadSource);
     populate('ageGroup', opts.ageGroup);
-    populate('addressCity', opts.addressCities);
     populate('incomeType', opts.incomeType);
     populate('creditInfo', opts.creditInfo);
     populate('carUsage', opts.carUsage);
@@ -167,21 +186,15 @@
     populate('desiredInitialCostType', opts.desiredInitialCostType);
     populate('maintenanceServiceLevel', opts.maintenanceServiceLevel);
     populate('customerStatus', opts.customerStatus);
-    populate('filterCustomerStatus', opts.customerStatus);
-  }
 
-  function loadDistricts(city) {
-    const el = document.getElementById('addressDistrict');
-    if (!el) return;
-    el.innerHTML = '<option value="">-- 선택 --</option>';
-    if (!city) { el.disabled = true; return; }
-    const list = DISTRICTS_MAP[city] || [];
-    list.forEach(d => {
-      const op = document.createElement('option');
-      op.value = d; op.textContent = d;
-      el.appendChild(op);
+    Object.keys(opts).forEach(key => {
+        // ID와 키 매핑이 필요할 수 있음 (예: customerStatus -> filterCustomerStatus)
+        populate(key, opts[key]);
     });
-    el.disabled = false;
+    // 별도 매핑
+    populate('filterCustomerStatus', opts.customerStatus);
+    populate('addressCity', opts.addressCities);
+
   }
 
   function getStatusClass(status) {
@@ -190,7 +203,7 @@
     return '';
   }
 
-  // ★ 목록 렌더링 함수 (메모, 차종, 날짜 복구)
+  // 목록 렌더링 함수
   function displayAssignedCustomers(customers, isNew) {
     const ul = document.getElementById('assignedCustomersList');
     const btn = document.getElementById('loadMoreBtn');
@@ -203,20 +216,16 @@
         const li = document.createElement('li');
         li.dataset.assignmentId = c.assignmentId;
         
-        // 상태 배지 클래스
         const statusClass = getStatusClass(c.customerStatus);
         
-        // 메모 조합 (관심차종 + 메모)
         let combinedMemo = c.interestedCarModel || '';
         if(c.customerMemo) {
             combinedMemo = combinedMemo ? `${combinedMemo} | ${c.customerMemo}` : c.customerMemo;
         }
         if(!combinedMemo) combinedMemo = '...';
 
-        // 날짜 포맷
         const dateStr = formatDate(c.lastLogDate);
 
-        // ★ HTML 구조 복구
         li.innerHTML = `
           <span class="li-item dbtype" title="${escapeHtml(c.dbType)}">${escapeHtml(c.dbType)}</span>
           <span class="li-item status"><span class="status-badge ${statusClass}">${escapeHtml(c.customerStatus)}</span></span>
@@ -233,7 +242,7 @@
     btn.disabled = false;
   }
 
-  // ★ 상세 정보 렌더링 (날짜 포맷 적용)
+  // 상세 정보 렌더링
   function displayAssignmentDetails(result) {
     const data = result.assignment;
     currentAssignmentId = data.assignmentId;
@@ -242,11 +251,9 @@
       const el = document.getElementById(id);
       if(el) {
         if(el.type === 'date' && v) {
-            // 날짜 입력칸은 YYYY-MM-DD 포맷 필요
             el.value = formatDate(v);
         }
         else if(el.tagName === 'SPAN') {
-            // 텍스트로 보여주는 날짜도 포맷팅
             if(id.includes('Date') || id.includes('Time')) {
                 el.textContent = formatDate(v);
             } else {
@@ -259,7 +266,7 @@
 
     setVal('detailAssignmentId', data.assignmentId);
     setVal('detailDbType', data.dbType);
-    setVal('detailAssignmentDate', data.assignmentDate); // 포맷팅 적용됨
+    setVal('detailAssignmentDate', data.assignmentDate);
     setVal('detailCustomerPhoneNumber', data.customerPhoneNumber);
     
     setVal('leadSource', data.leadSource);
@@ -267,8 +274,7 @@
     setVal('gender', data.gender);
     setVal('ageGroup', data.ageGroup);
     setVal('addressCity', data.addressCity);
-    loadDistricts(data.addressCity);
-    setTimeout(() => setVal('addressDistrict', data.addressDistrict), 100);
+    // addressDistrict 로직 삭제됨
     
     setVal('incomeType', data.incomeType);
     setVal('creditInfo', data.creditInfo);
@@ -293,6 +299,7 @@
     document.getElementById('detailCustomerNameText').textContent = data.customerName;
   }
 
+  // ★ [추가 수정] 상담 로그 렌더링 (카드 디자인 적용)
   function renderLogs(logs) {
     const div = document.getElementById('consultationLogs');
     div.innerHTML = '';
@@ -301,44 +308,187 @@
       return;
     }
     logs.forEach(l => {
-      const d = document.createElement('div');
-      d.className = 'log-entry';
-      // 로그 시간은 구체적인게 좋으므로 toLocaleString 사용 (원하면 formatDate로 변경 가능)
+      const card = document.createElement('div');
+      card.className = 'log-entry-card'; // CSS에서 정의한 카드 스타일
+      
       const timeStr = new Date(l.logTimestamp).toLocaleString();
-      d.innerHTML = `<strong>${timeStr}</strong><br>${escapeHtml(l.logContent)}`;
-      div.appendChild(d);
+      card.innerHTML = `
+        <span class="log-time">${timeStr}</span>
+        <div class="log-content">${escapeHtml(l.logContent)}</div>
+      `;
+      div.appendChild(card);
     });
   }
 
+  // [수정] 계약 이력 렌더링 (데이터 바인딩 오류 수정 및 클릭 이벤트)
   function renderContracts(contracts) {
     const ul = document.getElementById('contractList');
     ul.innerHTML = '';
     if(!contracts || contracts.length === 0) {
-      ul.innerHTML = '<li style="text-align:center; padding:10px; color:#777;">이력 없음</li>';
+      ul.innerHTML = '<li style="text-align:center; padding:10px; color:#777; font-size:0.9rem;">이력 없음</li>';
       return;
     }
     contracts.forEach(c => {
       const li = document.createElement('li');
-      li.style.cssText = "padding:10px; border-bottom:1px solid #eee;";
-      // 계약일 포맷팅
-      const cDate = formatDate(c.contractDate);
-      li.innerHTML = `<b>${escapeHtml(c.contractCarModel)}</b> <span class="status-badge">${escapeHtml(c.contractStatus)}</span><br><small>${cDate}</small>`;
+      li.style.cssText = "padding:10px; border-bottom:1px solid #eee; cursor:pointer; background:white; margin-bottom:5px; border-radius:4px;";
+      
+      li.onmouseover = () => li.style.background = '#f1f8ff';
+      li.onmouseout = () => li.style.background = 'white';
+      
+      li.onclick = (e) => {
+         e.stopPropagation();
+         const currentCustomerNameEl = document.getElementById('detailCustomerNameText');
+         const fallbackCustomerName = currentCustomerNameEl ? currentCustomerNameEl.textContent.trim() : '고객';
+
+         const contractDataWithCustomer = {
+             ...c,
+             // ★ 중요: DB 컬럼명 그대로 사용 (렌더링 오류의 주원인이었던 CamelCase 변환 제거)
+             customers: c.customers || { customer_name: fallbackCustomerName }
+         };
+         // ★ 중요: 두 번째 파라미터로 'customer_detail'을 넘겨서, 뒤로가기 시 고객 상세로 오게 함
+         viewContractDetail(contractDataWithCustomer, 'customer_detail');
+      };
+
+      const cDate = formatDate(c.contract_date); // Snake case 확인
+      const cModel = c.contract_car_model || '(차종 미입력)';
+      const cStatus = c.contract_status || '-';
+
+      li.innerHTML = `
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+            <b style="color:#333;">${escapeHtml(cModel)}</b> 
+            <span class="status-badge">${escapeHtml(cStatus)}</span>
+        </div>
+        <div style="font-size:0.8rem; color:#888; margin-top:4px;">${cDate}</div>
+      `;
       ul.appendChild(li);
     });
   }
 
+
+
+  // [2] 계약 목록 렌더링 (카드 리스트 스타일)
+  function renderGlobalContracts(contracts) {
+    const div = document.getElementById('globalContractList');
+    if(!div) return; 
+    div.innerHTML = '';
+    
+    if (!contracts || contracts.length === 0) {
+      div.innerHTML = '<div style="padding:20px; text-align:center; color:#999;">조회된 계약 내역이 없습니다.</div>';
+      return;
+    }
+
+    contracts.forEach(c => {
+      // 1. 데이터 가공
+      const custName = (c.customers && c.customers.customer_name) ? c.customers.customer_name : '(미확인)';
+      const cDate = formatDate(c.contract_date);
+      let statusBadge = `<span class="status-badge">${escapeHtml(c.contract_status)}</span>`;
+      if(c.contract_status === '진행중') statusBadge = `<span class="status-badge consulting">진행중</span>`;
+      if(c.contract_status === '계약 완료') statusBadge = `<span class="status-badge completed">계약 완료</span>`;
+
+      // 2. 요소 생성 (div 기반 row)
+      const row = document.createElement('div');
+      row.className = 'contract-row';
+      
+      // ★ 클릭 시 '계약 상세 화면'으로 이동 (바로 고객정보 아님)
+      row.onclick = () => viewContractDetail(c);
+
+      row.innerHTML = `
+        <span class="col-date">${cDate}</span>
+        <span class="col-car">${escapeHtml(c.contract_car_model)}</span>
+        <span class="col-customer">${escapeHtml(custName)}</span>
+        <span class="col-status">${statusBadge}</span>
+      `;
+      div.appendChild(row);
+    });
+  }
+  
+  
+  // [3] ★ 신규: 계약 상세 화면 보기 함수
+  let currentViewingContract = null; // 현재 보고 있는 계약 데이터 임시 저장
+
+  // [수정] 계약 상세 보기 (진입 경로 처리 추가)
+  // source: 'contract_list' (기본값) 또는 'customer_detail'
+  let currentContractSource = 'contract_list'; 
+  
+  function viewContractDetail(contractData, source = 'contract_list') {
+    currentViewingContract = contractData;
+    currentContractSource = source; // 진입 경로 저장
+
+    // 패널 제어
+    document.getElementById('listPanel').classList.add('hidden');
+    document.getElementById('contractListPanel').classList.add('hidden');
+    document.getElementById('customerDetailPanel').classList.add('hidden');
+    document.getElementById('contractDetailPanel').classList.remove('hidden');
+
+    // ★ 뒤로가기 버튼 텍스트 변경
+    const backBtn = document.getElementById('dynamicBackBtn');
+    if(source === 'customer_detail') {
+        backBtn.innerHTML = '&larr; 고객 상세로 돌아가기';
+    } else {
+        backBtn.innerHTML = '&larr; 계약 목록으로 돌아가기';
+    }
+
+    const setTxt = (id, txt) => document.getElementById(id).textContent = txt || '-';
+    setTxt('viewContStatus', contractData.contract_status);
+    setTxt('viewContDate', formatDate(contractData.contract_date));
+    setTxt('viewContCar', contractData.contract_car_model);
+    setTxt('viewContAmount', Number(contractData.contract_amount).toLocaleString() + '원');
+    setTxt('viewContTerm', contractData.contract_term);
+    setTxt('viewContSummary', contractData.contract_summary);
+    
+    // 명의자/이용자 구분 표시
+    const custName = (contractData.customers && contractData.customers.customer_name) ? contractData.customers.customer_name : '알 수 없음';
+    const relation = contractData.relationship || '본인';
+    
+    setTxt('viewContCustomerName', custName); // 이용자 (상담 고객)
+    
+    // 관계에 따라 명의자 표시 로직
+    if (relation === '본인') {
+       setTxt('viewContRealName', custName);
+    } else {
+       // 대리 계약인 경우, 명의자 정보가 별도로 저장되어 있다면 그것을 표시해야 함.
+       // 현재 DB 구조상으로는 명의자 이름이 별도 컬럼이 아닐 수 있으므로 (상담 시 입력한 로직 참고)
+       // 우선은 "대리인 (관계)" 형태로 표기하거나, 로직을 더 고도화해야 함.
+       // 여기서는 직관적으로 관계를 보여줌
+       setTxt('viewContRealName', `(명의자 별도)`); 
+    }
+    setTxt('viewContRelation', relation);
+  }
+
+  // [수정] 이벤트 리스너 (뒤로가기 버튼 로직)
+  // setupGlobalEventListeners 함수 안의 기존 backToContractListBtn 리스너를 이걸로 교체하세요.
+  const backBtn = document.getElementById('dynamicBackBtn');
+  if(backBtn) {
+      backBtn.addEventListener('click', (e) => {
+          e.preventDefault();
+          document.getElementById('contractDetailPanel').classList.add('hidden');
+          
+          if(currentContractSource === 'customer_detail') {
+              // 고객 상세로 복귀
+              document.getElementById('customerDetailPanel').classList.remove('hidden');
+          } else {
+              // 계약 목록으로 복귀
+              document.getElementById('contractListPanel').classList.remove('hidden');
+          }
+      });
+  }
+
+
   // ============================================================================
   // [4] 비즈니스 로직 (API 호출)
   // ============================================================================
+  
+  // 4-1. 고객 목록 조회 (검색 기능 복구)
   async function fetchCustomers(isNew = false) {
     if(isNew) {
       currentOffset = 0;
+      const getSafeVal = (id) => { const el = document.getElementById(id); return el ? el.value : ''; };
       currentFilters = {
-        searchTerm: document.getElementById('filterSearchTerm').value,
-        dbType: document.getElementById('filterDbType').value,
-        status: document.getElementById('filterCustomerStatus').value,
-        dateFrom: document.getElementById('filterAssignmentDateFrom').value,
-        dateTo: document.getElementById('filterAssignmentDateTo').value
+        searchTerm: getSafeVal('filterSearchTerm'),
+        dbType: getSafeVal('filterDbType'),
+        status: getSafeVal('filterCustomerStatus'),
+        dateFrom: getSafeVal('filterAssignmentDateFrom'),
+        dateTo: getSafeVal('filterAssignmentDateTo')
       };
     } else {
       currentOffset += PAGE_SIZE;
@@ -350,13 +500,17 @@
         .range(currentOffset, currentOffset + PAGE_SIZE - 1)
         .order('assignment_date', { ascending: false });
 
-      // ★ [핵심 수정] 내 고객만 보기 필터 적용
-      // currentUserName(한글 이름)이 DB의 assigned_to와 일치하는 것만 가져옴
       if (currentUserName) {
         query = query.eq('assigned_to', currentUserName);
       }
 
-      if(currentFilters.searchTerm) query = query.or(`customer_name.ilike.%${currentFilters.searchTerm}%,customer_phone.ilike.%${currentFilters.searchTerm}%`);
+      // ★ [복구 완료] 이름/번호 + 메모/관심차종까지 검색되도록 수정
+      if(currentFilters.searchTerm) {
+         const term = currentFilters.searchTerm;
+         // .or() 문법: 컬럼명.ilike.%검색어% 형태를 콤마로 연결
+         query = query.or(`customer_name.ilike.%${term}%,customer_phone.ilike.%${term}%,customer_memo.ilike.%${term}%,interested_car_model.ilike.%${term}%`);
+      }
+      
       if(currentFilters.status) query = query.eq('customer_status', currentFilters.status);
       if(currentFilters.dbType) query = query.eq('db_type', currentFilters.dbType);
       if(currentFilters.dateFrom) query = query.gte('assignment_date', currentFilters.dateFrom);
@@ -371,6 +525,36 @@
       totalCustomerCount = count;
       displayAssignedCustomers(data.map(toUiData), isNew);
     } catch(e) {
+      handleFailure(e);
+    } finally {
+      hideLoader();
+    }
+  }
+
+  // 4-2. 계약 목록 조회 (Join 사용)
+  async function fetchGlobalContracts(isNew = false) {
+    showLoader();
+    try {
+      // customers 테이블과 조인하여 고객명 가져오기
+      let query = supabase
+        .from('contracts')
+        .select('*, customers(customer_name, customer_phone)')
+        .order('contract_date', { ascending: false });
+
+      // 필터 적용
+      const statusEl = document.getElementById('filterContractStatus');
+      const termEl = document.getElementById('contractSearchTerm');
+      const dateEl = document.getElementById('filterContractDateFrom');
+      
+      if (statusEl && statusEl.value) query = query.eq('contract_status', statusEl.value);
+      if (termEl && termEl.value) query = query.ilike('contract_car_model', `%${termEl.value}%`);
+      if (dateEl && dateEl.value) query = query.gte('contract_date', dateEl.value);
+
+      const { data, error } = await query;
+      if (error) throw error;
+
+      renderGlobalContracts(data);
+    } catch (e) {
       handleFailure(e);
     } finally {
       hideLoader();
@@ -392,11 +576,13 @@
       if(e3) throw e3;
 
       document.getElementById('listPanel').classList.add('hidden');
+      if(document.getElementById('contractListPanel')) document.getElementById('contractListPanel').classList.add('hidden');
       document.getElementById('customerDetailPanel').classList.remove('hidden');
 
       displayAssignmentDetails({ assignment: toUiData(cust) });
       renderLogs(logs.map(l => ({ logTimestamp: l.log_timestamp, logContent: l.log_content })));
-      renderContracts(contracts.map(c => ({ contractCarModel: c.contract_car_model, contractStatus: c.contract_status, contractDate: c.contract_date })));
+      // DB에서 가져온 전체 데이터를 그대로 넘겨줘야 상세 화면에서 보입니다.
+      renderContracts(contracts);
 
     } catch(e) {
       handleFailure(e);
@@ -410,7 +596,7 @@
   // ============================================================================
   document.addEventListener('DOMContentLoaded', async () => {
     
-    // 0. URL 해시 체크 (로그인 팝업)
+    // URL 해시 체크 (로그인 팝업)
     google.script.url.getLocation(async function(location) {
         const hash = location.hash; 
         
@@ -429,7 +615,6 @@
                 });
 
                 if (!error) {
-                    // ★ [수정] 창 닫기 시도 후 안내 문구 표시
                     document.body.innerHTML = `
                         <div style="height:100vh; display:flex; flex-direction:column; justify-content:center; align-items:center; font-family:sans-serif; background:#f9f9f9;">
                             <h2 style="color:#28a745;">✅ 로그인 성공!</h2>
@@ -439,25 +624,28 @@
                         </div>
                     `;
                     document.getElementById('closeBtn').onclick = function() {
-                        window.open('', '_self').close(); // 닫기 시도
+                        window.open('', '_self').close(); 
                         alert("창이 닫히지 않으면 수동으로 닫아주세요.");
                     };
-                    // 자동 닫기 시도
                     setTimeout(() => window.open('', '_self').close(), 1000);
                     return; 
                 }
             }
         }
-        // 토큰 없으면 초기화
         initApp();
     });
   });
 
   async function initApp() {
     await populateSelectOptions();
-    const today = new Date();
-    const prev = new Date(); prev.setMonth(today.getMonth()-3);
-    document.getElementById('filterAssignmentDateFrom').value = prev.toISOString().split('T')[0];
+    
+    // 기본 날짜 설정 (최근 3개월)
+    const dateFromEl = document.getElementById('filterAssignmentDateFrom');
+    if (dateFromEl) {
+      const today = new Date();
+      const prev = new Date(); prev.setMonth(today.getMonth()-3);
+      dateFromEl.value = prev.toISOString().split('T')[0];
+    }
 
     setupGlobalEventListeners();
 
@@ -476,11 +664,11 @@
     currentUserEmail = sess.user.email;
     document.getElementById('loginModal').classList.add('hidden');
     
-    const { data } = await supabase.from('profiles').select('korean_name').eq('email', currentUserEmail).single();
+    // ★ [수정] .maybeSingle()로 변경하여 406 에러 방지
+    const { data } = await supabase.from('profiles').select('korean_name').eq('email', currentUserEmail).maybeSingle();
     currentUserName = data ? data.korean_name : currentUserEmail;
     console.log("Logged in as:", currentUserName);
     
-    // 로그인 정보 확보 후 목록 로드
     fetchCustomers(true);
   }
 
@@ -489,6 +677,23 @@
   // ============================================================================
   function setupGlobalEventListeners() {
     
+    // ★ 탭 버튼 리스너 추가
+    const tabCustomerBtn = document.getElementById('tabCustomerBtn');
+    const tabContractBtn = document.getElementById('tabContractBtn');
+    
+    if(tabCustomerBtn) {
+        tabCustomerBtn.addEventListener('click', () => switchTab('customer'));
+    }
+    if(tabContractBtn) {
+        tabContractBtn.addEventListener('click', () => switchTab('contract'));
+    }
+    
+    // ★ 계약 검색 버튼
+    const searchContractBtn = document.getElementById('searchContractBtn');
+    if(searchContractBtn) {
+        searchContractBtn.addEventListener('click', () => fetchGlobalContracts(true));
+    }
+
     const loginBtn = document.getElementById('googleLoginBtn');
     if(loginBtn) {
       loginBtn.addEventListener('click', async () => {
@@ -509,7 +714,13 @@
     document.getElementById('applyFilterBtn').addEventListener('click', () => fetchCustomers(true));
     document.getElementById('loadMoreBtn').addEventListener('click', () => fetchCustomers(false));
     document.getElementById('resetFilterBtn').addEventListener('click', () => {
-        document.getElementById('filterSearchTerm').value = '';
+        const setVal = (id, v) => { const el = document.getElementById(id); if(el) el.value = v; };
+        setVal('filterSearchTerm', '');
+        setVal('filterDbType', '');
+        setVal('filterCustomerStatus', '');
+        setVal('filterAssignmentDateFrom', ''); // 날짜도 초기화 (전체 보기)
+        setVal('filterAssignmentDateTo', '');
+        
         fetchCustomers(true);
     });
 
@@ -520,20 +731,57 @@
 
     document.getElementById('backToListBtn').addEventListener('click', e => {
       e.preventDefault();
+      // 현재 탭 상태에 따라 돌아갈 곳 결정
+      const isContractTab = document.getElementById('tabContractBtn').classList.contains('secondary') === false;
       document.getElementById('customerDetailPanel').classList.add('hidden');
-      document.getElementById('listPanel').classList.remove('hidden');
+      
+      if(isContractTab) {
+          document.getElementById('contractListPanel').classList.remove('hidden');
+      } else {
+          document.getElementById('listPanel').classList.remove('hidden');
+      }
       currentAssignmentId = null;
     });
 
+    // ★ 안전한 getVal 함수
+    const getVal = (id) => {
+        const el = document.getElementById(id);
+        return el ? el.value : ''; 
+    };
+
+    // 계약 상세 화면 -> 목록으로 돌아가기
+    const backToContListBtn = document.getElementById('backToContractListBtn');
+    if(backToContListBtn) {
+        backToContListBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            document.getElementById('contractDetailPanel').classList.add('hidden');
+            document.getElementById('contractListPanel').classList.remove('hidden');
+        });
+    }
+
+    // 계약 상세 화면 -> 고객 정보 보러가기
+    const goToCustBtn = document.getElementById('goToCustomerDetailBtn');
+    if(goToCustBtn) {
+        goToCustBtn.addEventListener('click', () => {
+             if(currentViewingContract && currentViewingContract.assignment_id) {
+                 // 계약 상세 닫고 -> 고객 상세 열기
+                 document.getElementById('contractDetailPanel').classList.add('hidden');
+                 selectCustomer(currentViewingContract.assignment_id);
+             } else {
+                 alert("연결된 고객 정보를 찾을 수 없습니다.");
+             }
+        });
+    }
+
     document.getElementById('saveCustomerDetailsBtn').addEventListener('click', async (e) => {
       if(!currentAssignmentId) return;
-      const getVal = (id) => document.getElementById(id).value;
+      
       const updates = {
         customer_type: getVal('customerType'),
         gender: getVal('gender'),
         age_group: getVal('ageGroup'),
         address_city: getVal('addressCity'),
-        address_district: getVal('addressDistrict'),
+        // address_district 삭제됨
         income_type: getVal('incomeType'),
         credit_info: getVal('creditInfo'),
         interested_car_model: getVal('interestedCarModel'),
@@ -662,6 +910,7 @@
 
             if (isProxy) {
                 relationshipVal = relation;
+                // 실계약자 존재 여부 확인
                 const { data: existUser } = await supabase.from('customers').select('assignment_id').eq('customer_phone', realPhone).maybeSingle();
                 
                 if (existUser) {
@@ -711,7 +960,8 @@
         }
     });
 
-    document.getElementById('addressCity').addEventListener('change', (e) => loadDistricts(e.target.value));
+    // 이벤트 리스너에서 addressCity change 이벤트 삭제됨
+    
     document.getElementById('newCustomerPhoneNumber').addEventListener('blur', (e) => {
       e.target.value = formatPhoneNumber_Client(e.target.value);
     });
