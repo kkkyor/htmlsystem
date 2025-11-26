@@ -1,877 +1,370 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  
   <base target="_top">
   <title>고객 상담일지 기록시스템</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&family=Roboto:wght@400;500&display=swap" rel="stylesheet">
 
   <style>
     /* ----------------------------------------------------------------- */
-    /* ★ [핵심] 기본 레이아웃 설정 */
+    /* 1. 기본 스타일 및 레이아웃 */
     /* ----------------------------------------------------------------- */
     body { 
-      font-family: 'Arial', sans-serif; 
-      line-height: 1.6; 
-      margin: 0; 
-      padding: 10px;
-      background-color: #f4f4f4; 
-      color: #333; 
-      overflow: hidden; /* ★ 전체 페이지 스크롤 방지 */
+      font-family: 'Noto Sans KR', 'Roboto', sans-serif; 
+      background-color: #f0f2f5; 
+      margin: 0; padding: 10px; 
+      overflow: hidden; color: #333;
     }
-    
-    .container { 
-      max-width: 100%; /* 너비 꽉 채우기 */
-      height: calc(100vh - 20px); /* 뷰포트 높이 꽉 채우기 */
-      margin: 0;
-      padding: 0;
-      background: #fff; /* ★ [수정] 컨테이너에 흰색 배경 */
-      border-radius: 8px;
-      box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
-      box-sizing: border-box;
-      display: flex; /* ★ [수정] 내부 패널이 높이를 100% 채우도록 */
-      flex-direction: column;
+    .container {
+      width: 100%; height: calc(100vh - 20px);
+      background: #fff; border-radius: 8px;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+      display: flex; flex-direction: column;
+      overflow: hidden; box-sizing: border-box;
     }
-    
-    /* ★ [핵심] '목록 뷰'와 '상세 뷰'의 공통 스타일 */
-    .list-panel, .detail-panel {
-      width: 100%;
-      height: 100%;
-      box-sizing: border-box;
-      display: flex; /* ★ [핵심] 2단 분할을 위해 Flex (가로 배치) */
-      flex-direction: row;
-      gap: 10px;
-      padding: 15px;
-    }
+    .hidden { display: none !important; }
 
-    h2 { color: #0056b3; border-bottom: 2px solid #eee; padding-bottom: 2px; margin-top: 0; margin-bottom: 3px;}
-    
-    h3 { 
-      font-size: 1.15rem; /* H3 폰트 약간 축소 */
-      margin-bottom: 10px;
-      margin-top: 10px;
+    /* 탭 디자인 */
+    .tab-container {
+      background-color: #fff; padding: 5px; border-radius: 8px;
+      display: flex; gap: 5px; margin-bottom: 10px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
     }
-    /* ----------------------------------------------------------------- */
-    /* ★ [핵심] 뷰 1: 목록 화면 (List View) - 2단 분할 */
-    /* ----------------------------------------------------------------- */
-    
-    /* 목록 뷰 - 좌측 패널 (필터 + ToDo) */
-    .list-left-pane {
-      flex: 0 0 350px; /* 좌측 너비 고정 */
-      height: 100%;
-      display: flex;
-      flex-direction: column;
-      gap: 15px;
+    .modern-tab {
+      flex: 1; border: none; background: transparent;
+      padding: 10px 0; border-radius: 6px;
+      font-weight: 700; color: #868e96; cursor: pointer;
+      transition: all 0.2s ease; font-size: 0.95rem;
     }
-    .filter-panel { 
-      padding: 15px; 
-      border: 1px solid #ddd; 
-      border-radius: 5px; 
-      background-color: #f9f9f9;
-      flex-shrink: 0; /* 크기 고정 */
-    }
-    
-    #todoListPanel {
-      flex-grow: 1; /* 남은 공간 차지 */
-      border: 1px solid #ddd;
-      border-radius: 5px;
-      padding: 15px;
-      display: flex;
-      flex-direction: column;
-      overflow: hidden; /* 내부 스크롤을 위해 */
-    }
-    #todoCustomersList {
-      list-style: none;
-      padding: 0;
-      margin: 0;
-      overflow-y: auto; /* ★ ToDo 목록 내부 스크롤 */
-      flex-grow: 1;
-    }
-    #todoCustomersList li { 
-      padding: 10px; 
-      background: #fdfdfd; 
-      border-bottom: 1px solid #eee; 
-      font-size: 0.95rem; 
-      cursor: pointer;
-      border-left: 3px solid #ffc107; /* ToDo 강조 */
-    }
-    #todoCustomersList li:hover { background-color: #fffbef; }
+    .modern-tab.active { background-color: #e7f5ff; color: #007bff; }
+    .modern-tab:hover:not(.active) { background-color: #f8f9fa; color: #495057; }
 
-    /* 목록 뷰 - 우측 패널 (전체 목록) */
-    .list-right-pane {
-      flex: 1; /* 남은 공간 차지 */
-      height: 100%;
-      display: flex;
-      flex-direction: column;
-      border: 1px solid #ddd;
-      border-radius: 5px;
-      padding: 15px;
-      box-sizing: border-box;
-      overflow: hidden; /* 내부 스크롤을 위해 */
-    }
-    .list-header { flex-shrink: 0; }
-    
-    ul#assignedCustomersList { 
-      list-style: none; 
-      padding: 0; 
-      margin: 0;
-      flex-grow: 1; /* 목록(ul)이 남은 공간 차지 */
-      overflow-y: auto; /* ★ 목록만 스크롤 */
-      max-height: none; /* 기존 max-height 제거 */
-    }
-    li.active { background-color: #cce5ff; border-left: 3px solid #0056b3; font-weight: bold; }
-    #assignedCustomersList li { 
-      background: #f9f9f9; 
-      margin-bottom: 6px; /* 여백 줄임 (10px -> 6px) */
-      padding: 8px 12px; /* 패딩 줄임 (12px 15px -> 8px 12px) */
-      border-radius: 5px; 
-      cursor: pointer; 
-      transition: background-color: 0.3s ease; 
-      border-left: 4px solid transparent; 
-      /* line-height: 1.5; */ /* 제거 */
+    /* 패널 레이아웃 */
+    .list-panel, .detail-panel { flex: 1; display: flex; gap: 0; height: 100%; overflow: hidden; }
+    .list-left-pane { flex: 0 0 320px; display: flex; flex-direction: column; border-right: 1px solid #dee2e6; background-color: #fcfcfc; }
+    .list-right-pane { flex: 1; display: flex; flex-direction: column; background: #fff; overflow: hidden; }
+    .filter-panel { padding: 15px; overflow-y: auto; }
+    .list-header { padding: 12px 20px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; background: #fff; flex-shrink: 0; }
 
-      /* [신규] 1줄 플렉스 레이아웃 적용 */
-      display: flex;
-      flex-direction: row;
-      align-items: center;
-      gap: 10px; /* 자식 요소간 간격 */
-      line-height: 1.3; /* 줄 높이 */
-    }
+    /* 상세 화면 구조 */
+    .detail-log-pane { flex: 0 0 500px; display: flex; flex-direction: column; border-left: 1px solid #dee2e6; background: #fdfdfd; }
+    .detail-info-pane { flex: 1; padding: 20px; overflow-y: auto; }
 
-
-    /* ----------------------------------------------------------------- */
-    /* ★ [핵심] 뷰 2: 상세 화면 (Detail View) - 2단 분할 */
-    /* ----------------------------------------------------------------- */
-    
-    /* 상세 뷰 - 좌측 패널 (고객 정보) */
-    .detail-info-pane {
-      flex: 1; /* 남은 공간 차지 */
-      height: 100%;
-      overflow-y: auto; /* ★ [핵심] 고객 정보 영역만 스크롤 */
-      border: 1px solid #ddd;
-      border-radius: 5px;
-      padding: 15px;
-      box-sizing: border-box;
-    }
-    
-    /* [신규] 요청 4: 단락 제목(h3) 색상 변경 */
-    .detail-info-pane h3 {
-      color: #0056b3; 
-      margin-top: 0; /* [유지] 브라우저 기본 상단 마진 제거 */
-      margin-bottom: 10px; /* [유지] 10px -> 5px (제목과 그리드 사이 간격) */
-      /* ▼▼▼ [신규] Flex 컨테이너로 변경 ▼▼▼ */
-      display: flex;
-      align-items: center;
-      /* ▲▲▲ [신규] ▲▲▲ */
-    }
-    /* 상세 뷰 - 우측 패널 (상담 기록) */
-    .detail-log-pane {
-      /* [수정] 요청 11: 너비 450px -> 600px */
-      flex: 0 0 600px; 
-      height: 100%;
-      display: flex;
-      flex-direction: column;
-      border: 1px solid #ddd;
-      border-radius: 5px;
-      padding: 15px;
-      box-sizing: border-box;
-      background-color: #fdfdfd;
-      overflow: hidden; /* 내부 스크롤을 위해 */
-    }
-    /* [신규] 요청 4: 단락 제목(h3) 색상 변경 */
-    .detail-log-pane h3 {
-      color: #0056b3; 
-    }
-    /* [신규] H3 제목 텍스트 뒤에 구분선 추가 */
-.detail-info-pane h3::after {
-  content: '';
-  flex: 1; /* 남은 공간을 모두 채움 */
-  height: 1px;
-  background-color: #eee;
-  margin-left: 10px; /* 제목과 선 사이 간격 */
-  order: 1; /* [중요] 선을 1순위로 (텍스트 다음) */
-}
-
-/* [신규] H3 안의 버튼(예: '+ 신규 계약 추가')을 선 뒤로 이동 */
-.detail-info-pane h3 > button {
-  order: 2; /* [중요] 버튼을 2순위로 (선 다음) */
-  flex-shrink: 0; /* 버튼이 찌그러지지 않게 함 */
-}
-    
-    .detail-log-pane .log-entries {
-      flex-grow: 1; /* 상담 목록이 남은 공간 차지 */
-      overflow-y: auto; /* ★ [핵심] 상담 목록만 스크롤 */
-      min-height: 200px;
-      border: 1px solid #eee;
-      padding: 10px;
-      background-color: #fff;
-      margin-bottom: 15px;
-    }
-    .log-entry { background: #f9f9f9; border-bottom: 1px solid #eee; padding: 10px; margin-bottom: 5px; font-size: 0.9rem; white-space: pre-wrap; }
-    .log-entry:last-child { border-bottom: none; }
-    .log-entry strong { color: #0056b3; margin-right: 10px; }
-    
-    .detail-log-pane .log-add-section {
-      flex-shrink: 0; /* 크기 고정 */
-    }
-    .detail-log-pane .form-group { margin-top: 0; margin-bottom: 10px; }
-    .detail-log-pane textarea { min-height: 120px; }
-
-    /* ----------------------------------------------------------------- */
-    /* 기타 유틸리티 및 공통 스타일 */
-    /* ----------------------------------------------------------------- */
-    .info-item { margin-bottom: 5px; display: flex; align-items: center; }
-    .info-item strong { display: inline-block; width: 80px; color: #555; flex-shrink: 0; }
-    .info-input { border: 1px solid #ccc; padding: 5px; border-radius: 4px; font-size: 1rem; }
-
-    /* [삭제] 요청 8: .basic-info-grid CSS 삭제 */
-    
-    .back-link { display: inline-block; margin-bottom: 15px; color: #007bff; text-decoration: none; font-weight: bold; font-size: 1.05rem; }
-    .back-link:hover { text-decoration: underline; }
+    /* 폼 요소 */
     .form-group { margin-bottom: 8px; }
-    .form-group label { display: block; margin-bottom: 5px; font-weight: bold; font-size: 0.9rem; }
-    .form-group select, .form-group textarea, .form-group input { width: 100%; padding: 6px 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 0.9rem; box-sizing: border-box; font-family: 'Roboto', sans-serif; }
-    select.placeholder {
-      color: #999 !important; /* 선택 안되었을 때 연한 회색 */
+    .form-group label { display: block; margin-bottom: 4px; font-size: 0.8rem; font-weight: 600; color: #666; }
+    input, select, textarea {
+      width: 100%; padding: 6px 8px; border: 1px solid #d1d3e2; border-radius: 4px;
+      font-size: 0.9rem; font-family: 'Noto Sans KR', sans-serif; box-sizing: border-box; height: 36px;
     }
-    /* 드롭다운을 열었을 때 옵션들은 항상 진한 색으로 표시 */
-    select option {
-      color: #333;
+    textarea { height: auto; }
+    input:focus, select:focus, textarea:focus { outline: none; border-color: #007bff; box-shadow: 0 0 0 2px rgba(0,123,255,0.1); }
+    button { 
+      cursor: pointer; border: none; border-radius: 4px; padding: 8px 12px; 
+      background: #007bff; color: white; font-weight: 500; font-size: 0.9rem; transition: background 0.2s; 
     }
-    .form-group textarea { resize: vertical; }
-    button { background-color: #007bff; color: white; padding: 8px 12px; border: none; border-radius: 4px; cursor: pointer; font-size: 0.95rem; transition: background-color: 0.3s ease; }
-    button:hover { background-color: #0056b3; }
-    button:disabled { background-color: #ccc; cursor: not-allowed; }
-    button.secondary { background-color: #6c757d; }
-    button.secondary:hover { background-color: #5a6268; }
-    
-    /* [수정] 요청 13: 단락 간 여백(padding/margin) 8px로 축소 */
-    .details-section { 
-      margin-top: 15px;
-      margin-bottom: 10px;
-    }
-    
-    /* [수정] 요청 13: 그리드 항목 크기(300px) 고정, 여백(gap)은 고정하되, 항목 간 자동 배분(space-between) */
-    .details-grid { 
-      display: grid; 
-      grid-template-columns: repeat(auto-fit, 300px); /* 300px 고정 크기 */
-      gap: 8px 15px; 
-      margin-top: 10px;
-      margin-bottom: 5px; 
-      justify-content: space-between; /* [핵심] 항목 사이의 여백을 자동으로 배분 */
-    }
-    
-    /* ▼▼▼ [신규/수정] 그리드 내의 폼 그룹을 Flex(가로) 레이아웃으로 변경 ▼▼▼ */
-    .details-grid .form-group {
-      display: flex;
-      flex-direction: row; /* 라벨과 입력을 가로로 배치 */
-      align-items: center;
-      gap: 8px;
-      margin-bottom: 5; /* 그리드 갭이 여백을 대신함 */
-    }
-    
-    /* [수정] 요청 10: .info-item (span 항목) 스타일 정의 */
-    .details-grid .info-item {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      font-size: 0.9rem;
-      /* padding: 6px 8px; */ /* [삭제] 래퍼 패딩 제거 (정렬 문제) */
-      box-sizing: border-box; 
-      min-height: 34px; 
-    }
-    .details-grid .info-item strong {
-      flex: 0 0 90px; /* details-grid의 label 너비와 동일하게 */
-      margin-bottom: 0;
-      font-weight: bold;
-      color: #555;
-    }
-    .details-grid .info-item span {
-      flex: 1 1 auto;
-      word-break: break-all; /* ID 등이 길 경우 */
-      font-size: 1rem; /* input/select 글꼴 크기와 맞춤 */
-      color: #333;
-      /* [신규] 요청 10: input/select와 동일하게 패딩 추가 */
-      padding: 6px 8px; 
-      box-sizing: border-box;
-      /* (선택) span도 input처럼 보이게 */
-      /* background-color: #f4f4f4; */
-      /* border: 1px solid #eee; */
-      /* border-radius: 4px; */
-    }
-    
-    
-    /* ▼▼▼ [신규/수정] 그리드 내 폼 라벨의 너비 고정 ▼▼▼ */
-    .details-grid .form-group label {
-      flex: 0 0 90px; /* 항목 이름(라벨) 너비를 90px로 고정 */
-      margin-bottom: 0;
-      font-size: 0.9rem;
-      font-weight: bold;
-    }
-    /* ▼▼▼ [신규/수정] 그리드 내 입력란이 남은 공간을 채우도록 변경 ▼▼▼ */
-    .details-grid .form-group select,
-    .details-grid .form-group input,
-    .details-grid .form-group textarea {
-      flex: 1 1 auto; /* 남은 공간을 모두 차지 */
-      //width: auto; /* 기존 width: 100% 무효화 */
-    }
-    .contract-info { background-color: #e9f5ff; padding: 15px; border-radius: 5px; }
-    .contract-info h3 { color: #004085; border-bottom-color: #b8daff; }
-    
-    /* [삭제] 요청 8: .contact-info-grid CSS 삭제 */
-    
-    .list-item-status { font-size: 0.9em; color: #555; }
-    .filter-group { 
-      display: grid; 
-      grid-template-columns: 1fr 1fr; /* ★ 1열 -> 2열 그리드로 변경 */
-      gap: 12px 8px; /* 세로 12px, 가로 8px */
-    }
-    .filter-panel .form-group label {
-      font-size: 0.85rem; /* 라벨 폰트 약간 축소 */
-      margin-bottom: 3px;
-    }
-    .filter-panel .form-group {
-      margin-bottom: 0; /* 갭이 여백을 대신함 */
-    }
-    .filter-top-row { display: flex; flex-direction: column; gap: 10px; margin-bottom: 15px; }
-    .search-group { flex-basis: 100%; }
-    .filter-actions { display: flex; gap: 10px; }
-    .filter-actions button { flex: 1; }
-    .filter-group select, 
-    .filter-group input, 
-    .search-group input { 
-      width: 100%; 
-      padding: 8px; /* ★ 10px -> 8px (높이 축소) */
-      box-sizing: border-box; 
-      font-size: 0.9rem; /* ★ 1rem -> 0.9rem (폰트 축소) */
-      border: 1px solid #ccc; 
-      border-radius: 4px; 
-      font-family: 'Roboto', sans-serif; 
-    }
-    .filter-group .full-width {
-      grid-column: 1 / -1;
-    }
-    .list-header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 10px; }
-    .add-action-panel { display: flex; gap: 10px; }
+    button:hover { background: #0069d9; }
+    button.secondary { background: #6c757d; color: white; }
+    button.secondary:hover { background: #5a6268; }
 
-    /* 모달, 로더, 상태 배지 */
-    .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0, 0, 0, 0.6); z-index: 100001; display: flex; justify-content: center; align-items: center; }
-    #loader { z-index: 100002; }
-    .modal-content { background: #fff; padding: 25px; border-radius: 8px; width: 90%; max-width: 500px; box-shadow: 0 5px 15px rgba(0,0,0,0.3); }
-    .modal-actions { text-align: right; margin-top: 20px; display: flex; gap: 10px; justify-content: flex-end; }
-    .loader-content { display: flex; flex-direction: column; align-items: center; color: white; font-size: 1.2rem; }
-    .spinner { border: 6px solid #f3f3f3; border-top: 6px solid #007bff; border-radius: 50%; width: 50px; height: 50px; animation: spin 1s linear infinite; margin-bottom: 15px; }
+    /* ----------------------------------------------------------------- */
+    /* 2. 리스트 및 테이블 디자인 (핵심 수정) */
+    /* ----------------------------------------------------------------- */
+    
+    /* 공통 헤더 스타일 */
+    .list-header-row {
+      display: flex; align-items: center;
+      padding: 10px 15px; 
+      background: #f1f3f5; /* 배경색 변경 */
+      border-bottom: 2px solid #dee2e6; /* 구분선 강조 */
+      font-weight: bold; color: #495057; font-size: 0.85rem;
+    }
+    
+    /* 리스트 아이템 공통 */
+    .contract-row, #assignedCustomersList li {
+      display: flex; align-items: center; 
+      padding: 12px 15px; 
+      border-bottom: 1px solid #f1f3f5; 
+      cursor: pointer; background: #fff;
+      transition: background 0.1s;
+    }
+    .contract-row:hover, #assignedCustomersList li:hover { background-color: #eef7ff; }
+
+    /* [고객 목록] 컬럼 정의 */
+    .col-db     { flex: 0 0 70px; text-align: center; color: #555; }
+    .col-status { flex: 0 0 90px; text-align: center; }
+    .col-name   { flex: 0 0 100px; text-align: center; font-weight: bold; color: #004085; }
+    .col-phone  { flex: 0 0 110px; text-align: center; color: #444; }
+    .col-memo   { flex: 1; padding: 0 10px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: #666; text-align: left; }
+    .col-last   { flex: 0 0 90px; text-align: center; color: #d63384; font-weight: 500; }
+    .col-date   { flex: 0 0 90px; text-align: center; color: #888; }
+
+    /* [계약 목록] 컬럼 정의 */
+    .col-cont-date   { flex: 0 0 100px; text-align: center; color: #666; }
+    .col-cont-car    { flex: 1; font-weight: bold; color: #333; padding: 0 10px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; text-align: left; }
+    .col-cont-cust   { flex: 0 0 100px; text-align: center; color: #0056b3; font-weight: 500; }
+    .col-cont-status { flex: 0 0 90px; text-align: center; }
+
+    /* [상세화면 내부] 미니 계약 리스트용 헤더 */
+    .mini-header-row {
+      display: flex; align-items: center;
+      padding: 8px 10px; background: #f8f9fa; 
+      border-bottom: 1px solid #dee2e6; border-top: 1px solid #dee2e6;
+      font-weight: bold; color: #666; font-size: 0.8rem; margin-top: 10px;
+    }
+    /* 상세화면 내부 리스트 아이템 */
+    #contractList li {
+      display: flex; align-items: center; padding: 10px; 
+      border-bottom: 1px solid #eee; cursor: pointer;
+    }
+    #contractList li:hover { background-color: #f8f9fa; }
+
+    /* 상태 배지 */
+    .status-badge { padding: 3px 8px; border-radius: 12px; font-size: 0.75rem; background: #eee; font-weight: bold; color: #555; }
+    .status-badge.consulting { background: #fff3cd; color: #856404; }
+    .status-badge.completed { background: #d1e7dd; color: #0f5132; }
+
+    /* ----------------------------------------------------------------- */
+    /* 3. 기타 상세 스타일 */
+    /* ----------------------------------------------------------------- */
+    .search-bar-group { display: flex; gap: 5px; align-items: center; }
+    .filter-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .full-width { grid-column: span 2; }
+    
+    .details-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 10px 15px; margin-bottom: 15px; }
+    .span-2 { grid-column: span 2; }
+    .details-section h3 { font-size: 1rem; color: #0056b3; border-bottom: 1px solid #e3e6f0; padding-bottom: 5px; margin-top: 20px; margin-bottom: 10px; }
+
+    .log-entries { flex: 1; overflow-y: auto; border: 1px solid #e3e6f0; border-radius: 4px; padding: 15px; margin: 10px; background: #f8f9fa; }
+    .log-entry-card { background: white; border: 1px solid #e0e0e0; border-radius: 8px; padding: 12px; margin-bottom: 10px; box-shadow: 0 1px 2px rgba(0,0,0,0.03); }
+    .log-time { font-size: 0.8rem; color: #007bff; font-weight: bold; margin-bottom: 5px; display: block; }
+    .log-content { font-size: 0.9rem; color: #333; line-height: 1.5; white-space: pre-wrap; }
+    .log-add-section { padding: 10px; border-top: 1px solid #eee; background: #fff; }
+    
+    .contract-detail-container { max-width: 900px; margin: 20px auto; width: 95%; }
+    .contract-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #0056b3; padding-bottom: 15px; margin-bottom: 20px; }
+    .info-card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; }
+    .info-card { background: white; border: 1px solid #e3e6f0; border-radius: 8px; padding: 20px; box-shadow: 0 2px 5px rgba(0,0,0,0.02); }
+    .detail-row { display: flex; justify-content: space-between; margin-bottom: 12px; border-bottom: 1px dashed #f0f0f0; padding-bottom: 4px; }
+    .detail-label { font-weight: 600; color: #777; font-size: 0.9rem; }
+    .detail-value { font-weight: 500; color: #333; font-size: 1rem; text-align: right; }
+    .highlight-value { color: #0056b3; font-weight: bold; font-size: 1.1rem; }
+    
+    .btn-link-customer { display: block; width: 100%; margin-top: 20px; padding: 15px; background-color: #007bff; color: white; text-align: center; border: none; border-radius: 8px; font-size: 1rem; font-weight: bold; cursor: pointer; }
+    
+    .back-link { display: inline-block; margin-bottom: 10px; color: #555; text-decoration: none; font-weight: bold; font-size: 0.9rem; }
+    .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 9999; display: flex; justify-content: center; align-items: center; }
+    .modal-content { background: white; padding: 25px; border-radius: 8px; width: 90%; max-width: 450px; box-shadow: 0 5px 15px rgba(0,0,0,0.2); }
     @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-    .status-badge { padding: 3px 8px; border-radius: 12px; font-size: 0.85em; font-weight: bold; color: #333; background-color: #e0e0e0; }
-    .status-badge.consulting { background-color: #fff3cd; color: #664d03; }
-    .status-badge.completed { background-color: #d1e7dd; color: #0f5132; }
-    .status-badge.contracted { background-color: #cce5ff; color: #004085; border: 1px solid #0056b3; }
-    .status-badge.failed { background-color: #f8d7da; color: #58151c; }
-    /* [신규] '고객 정보 저장' 버튼 상단 여백 및 우측 정렬 */
-    #saveCustomerDetailsBtn {
-      display: block;       /* [추가] 버튼을 블록 요소로 만듦 */
-      margin-left: auto;    /* [추가] 왼쪽 마진을 자동으로 밀어내어 우측 정렬 */
-      margin-right: 10px;      /* [추가] 오른쪽 마진은 0으로 고정 */
-      margin-top: 5px;      /* [유지] 상단 여백 */
-      margin-bottom: 10px;
-    }
-    /* ★ [핵심] hidden 클래스 로직 (패널 전환 및 모달용) */
-    .hidden,
-    #loader.hidden, 
-    #addCustomerModal.hidden,
-    #addContractModal.hidden, /* [신규] Task 6 */
-    #contractInfoSection.hidden,
-    #customerInfoGroup.hidden { 
-      display: none !important; 
-    }
-    
-    .error-modal-content { background: #fff; padding: 25px; border-radius: 8px; width: 90%; max-width: 400px; box-shadow: 0 5px 15px rgba(0,0,0,0.3); }
-    .error-modal-content h3 { color: #dc3545; margin-top: 0; border-bottom: 2px solid #eee; }
-    .error-modal-content p { margin: 20px 0; font-size: 1.1rem; }
-    .error-modal-btn { background-color: #dc3545 !important; color: white; width: 100%; }
-    .error-modal-btn:hover { background-color: #c82333 !important; }
-
-    /* 반응형 (화면이 좁아지면 2단 분할을 세로로 쌓음) */
-    @media (max-width: 1200px) {
-      .list-panel, .detail-panel {
-        flex-direction: column;
-        overflow-y: auto; /* 패널 자체가 스크롤되도록 */
-        height: auto; 
-      }
-      .list-left-pane, .list-right-pane,
-      .detail-info-pane, .detail-log-pane {
-        flex-basis: auto; 
-        width: 100%;
-        height: auto; 
-        overflow-y: visible; /* 내부 스크롤 제거 */
-      }
-      ul#assignedCustomersList, #todoCustomersList {
-        max-height: 50vh; 
-        overflow-y: auto;
-      }
-      .detail-log-pane .log-entries {
-        max-height: 40vh; 
-        overflow-y: auto;
-      }
-      /* [신규] 반응형일 때 contact-info-grid 2열로 변경 */
-      /* [수정] .contact-info-grid -> .details-grid */
-      .details-grid {
-        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-        /* [수정] 요청 13: 반응형에서는 space-between 대신 기본(stretch)으로 */
-        justify-content: stretch; 
-      }
-    }
-
-    /* 스켈레톤, 플래시 등 */
-    .skeleton-li { background: #f9f9f9; margin-bottom: 10px; padding: 12px 15px; border-radius: 5px; border-left: 4px solid transparent; line-height: 1.5; }
-    .skeleton-item { background: linear-gradient(90deg, #eee 25%, #e0e0e0 50%, #eee 75%); background-size: 200% 100%; animation: skeleton-shine 1.5s infinite linear; border-radius: 4px; }
-    .skeleton-li .line-1 { height: 1.15em; width: 40%; margin-bottom: 8px; }
-    .skeleton-li .line-2 { height: 0.95em; width: 60%; margin-bottom: 8px; }
-    .skeleton-li .line-3 { height: 0.9em; width: 30%; border-top: 1px solid #eee; padding-top: 8px; }
-    @keyframes skeleton-shine { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
-    .flash-success { animation: flash-green 1s ease-out; }
-    @keyframes flash-green { 0% { background-color: #d4edda; } 100% { background-color: #f9f9f9; } }
-    .form-group-inline label { margin-bottom: 3px; }
-    .input-button-group { display: flex; align-items: center; gap: 8px; }
-    
-    /* [수정] 요청 1: '번호 저장' 버튼 높이 수정 */
-    .input-button-group button {
-       padding: 6px 12px; /* [수정] 8px -> 6px (input과 동일하게) */
-       font-size: 0.9rem;
-       height: auto; 
-       min-height: 0;
-       line-height: 1.2; 
-       flex-shrink: 0; /* [신규] 요청 9: 버튼 너비 축소 방지 */
-    }
-    .input-button-group input {
-      height: auto;
-      min-height: 0;
-      padding: 6px 8px; 
-      font-size: 0.9rem;
-    }
-    
-    .detail-info-pane .details-section:first-child .form-group,
-    .detail-info-pane .details-section:first-child .form-group-inline { max-width: 450px; }
-    .details-section h3 { display: flex; justify-content: space-between; align-items: center; }
-    .toggle-section-btn { font-size: 0.85rem; padding: 3px 10px; background-color: #6c757d; min-height: auto; height: auto; line-height: 1.5; }
-    .toggle-section-btn:hover { background-color: #5a6268; }
-
-    /* [삭제] 요청 13: 이전의 잘못된 :first-child 규칙 삭제 */
-
-    /* [수정] 요청 13: 숨겨진 단락들의 여백을 줄이고 선(border-top)은 유지 */
-    #customerInfoGroup > .details-section {
-      margin-top: 8px; /* 10px -> 8px */
-      padding-top: 4px; /* 10px -> 8px */
-      margin-bottom: 10px;
-    }
-
-    /* [신규] 1줄 리스트 아이템 스타일 */
-    .li-item {
-      white-space: nowrap; /* 줄바꿈 방지 */
-      overflow: hidden; /* 넘침 숨기기 */
-      text-overflow: ellipsis; /* ... 처리 */
-    }
-
-    /* ▼▼▼ [신규] DB 유형 스타일 추가 ▼▼▼ */
-    .li-item.dbtype {
-      flex: 0 0 80px;  /* 80px 고정 너비 (DB 유형용) */
-      color: #666;
-      font-weight: bold;
-      font-size: 0.9em;
-    }
-    /* ▲▲▲ [신규] ▲▲▲ */
-
-    .li-item.status {
-      flex: 0 0 100px; /* 100px 고정 (상태 배지) */
-    }
-    .li-item.name {
-      /* ▼▼▼ [수정] flex: 1 1 120px -> 0 1 120px (공간 확장 방지) ▼▼▼ */
-      flex: 0 1 120px; 
-      font-weight: bold;
-      color: #004085;
-      font-size: 1.05em;
-    }
-    .li-item.phone {
-      flex: 0 0 120px; /* 120px 고정 (전화번호) */
-      color: #333;
-      font-size: 0.95em;
-    }
-    /* ▼▼▼ [수정] .model -> .memo 로 클래스명 변경 ▼▼▼ */
-    .li-item.memo {
-      flex: 1 1 100px; /* 100px 기본, 남은 공간 모두 차지 */
-      color: #444;
-      font-size: 0.95em;
-    }
-    /* ▲▲▲ [수정] ▲▲▲ */
-
-    .li-item.log {
-      /* ▼▼▼ [수정] flex: 0 1 150px -> 1 1 150px (남은 공간 모두 차지) ▼▼▼ */
-      flex: 0 1 150px; 
-      color: #0056b3;
-      font-size: 0.9em;
-    }
-
-    /* ▼▼▼ [수정] DB유형이 분리되었으므로 너비 축소 ▼▼▼ */
-    .li-item.date {
-      flex: 0 0 90px; /* 90px 고정 (110px -> 90px) */
-      font-size: 0.9em;
-      color: #555;
-      text-align: right;
-    }
-    /* ▲▲▲ [수정] ▲▲▲ */
   </style>
 </head>
+
 <body data-view="<?= view ?>" data-is-dual-mode="false" data-script-url="<?= scriptUrl ?>">
-  <div id="loginModal" class="modal-overlay" style="z-index: 200000; background-color: #fff;">
-  <div class="modal-content" style="text-align: center; max-width: 400px;">
-    <h2 style="border-bottom: none; color: #333; margin-bottom: 20px;">고객 상담일지 시스템</h2>
-    <p style="margin-bottom: 30px; color: #666;">로그인이 필요한 서비스입니다.</p>
-    
-    <button id="googleLoginBtn" style="width: 100%; padding: 12px; font-size: 1rem; background-color: #4285F4; display: flex; align-items: center; justify-content: center; gap: 10px;">
-      <svg width="18" height="18" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/><path fill="none" d="M0 0h48v48H0z"/></svg>
-      Google 계정으로 로그인
-    </button>
-  </div>
-</div>
-  <div id="loader" class="modal-overlay hidden" role="alert" aria-live="assertive">
-    <div class="loader-content"><div class="spinner"></div><p>처리 중입니다...</p></div>
-  </div>
   
+  <div id="loader" class="modal-overlay hidden"><div style="color:white; text-align:center;"><div style="border:4px solid #f3f3f3; border-top:4px solid #3498db; border-radius:50%; width:40px; height:40px; animation:spin 1s linear infinite; margin:0 auto 10px;"></div><p>처리 중...</p></div></div>
+  <div id="loginModal" class="modal-overlay hidden" style="z-index: 200000; background-color: #fff;">
+    <div class="modal-content" style="text-align: center;">
+      <h2>로그인 필요</h2><button id="googleLoginBtn" style="width:100%; padding:12px;">Google 계정으로 로그인</button>
+    </div>
+  </div>
   <div id="addCustomerModal" class="modal-overlay hidden">
     <div class="modal-content">
       <h2>신규 고객 추가</h2>
-      <div class="form-group"><label for="newDbType">디비 유형:</label><select id="newDbType"></select></div>
-      <div class="form-group"><label for="newCustomerName">고객명:</label><input type="text" id="newCustomerName" placeholder="고객명을 입력하세요 (필수)"></div>
-      <div class="form-group"><label for="newCustomerPhoneNumber">고객 전화번호:</label><input type="tel" id="newCustomerPhoneNumber" placeholder="숫자 또는 '-'를 포함하여 입력"></div>
-      <div class="modal-actions"><button id="cancelAddCustomerBtn" class="secondary">취소</button><button id="saveNewCustomerBtn">저장</button></div>
+      <div class="form-group"><label>디비 유형:</label><select id="newDbType"></select></div>
+      <div class="form-group"><label>고객명:</label><input type="text" id="newCustomerName"></div>
+      <div class="form-group"><label>전화번호:</label><input type="tel" id="newCustomerPhoneNumber"></div>
+      <div class="modal-actions" style="display:flex; justify-content:flex-end; gap:10px; margin-top:20px;">
+        <button id="cancelAddCustomerBtn" class="secondary">취소</button><button id="saveNewCustomerBtn">저장</button>
+      </div>
+    </div>
+  </div>
+  <div id="addContractModal" class="modal-overlay hidden">
+    <div class="modal-content">
+      <h2>신규 계약 추가</h2>
+      <div class="form-group" style="background: #f0f8ff; padding: 15px; border-radius: 8px;">
+        <label style="display:flex; align-items:center; cursor:pointer; margin:0;"><input type="checkbox" id="isDifferentContractor" style="width:auto; margin-right:8px; height:auto;"><span style="font-weight:bold; color:#0056b3;">실계약자가 다릅니까?</span></label>
+        <div id="realContractorForm" class="hidden" style="margin-top:10px; border-top:1px solid #ddd; padding-top:10px;">
+          <div class="form-group"><label>실계약자 이름:</label><input type="text" id="realContractorName"></div>
+          <div class="form-group"><label>연락처:</label><input type="tel" id="realContractorPhone"></div>
+          <div class="form-group"><label>관계:</label><select id="contractorRelation"><option>가족/배우자</option><option>지인/소개</option><option>법인/임직원</option></select></div>
+        </div>
+      </div>
+      <div class="filter-grid" style="margin-top:10px;">
+        <div class="form-group"><label>계약일:</label><input type="date" id="modalContractDate"></div>
+        <div class="form-group"><label>월 렌탈료:</label><input type="number" id="modalContractAmount"></div>
+      </div>
+      <div class="form-group"><label>차종:</label><input type="text" id="modalContractCarModel"></div>
+      <div class="form-group"><label>기간:</label><input type="text" id="modalContractTerm"></div>
+      <div class="form-group"><label>특이사항:</label><textarea id="modalContractSummary" rows="2"></textarea></div>
+      <div class="modal-actions" style="display:flex; justify-content:flex-end; gap:10px; margin-top:20px;">
+        <button id="cancelAddContractBtn" class="secondary">취소</button><button id="saveNewContractBtn">저장</button>
+      </div>
     </div>
   </div>
 
-  <div id="addContractModal" class="modal-overlay hidden">
-  <div class="modal-content">
-    <h2>신규 계약 추가</h2>
-    
-    <div class="form-group" style="background: #f0f8ff; padding: 10px; border-radius: 5px; margin-bottom: 15px;">
-      <label style="display:flex; align-items:center; cursor:pointer; margin-bottom: 0;">
-        <input type="checkbox" id="isDifferentContractor" style="width:auto; margin-right:8px;">
-        <span style="font-weight:bold; color:#0056b3; font-size: 0.95rem;">실계약자가 상담자와 다릅니까?</span>
-      </label>
-      
-      <div id="realContractorForm" class="hidden" style="margin-top:10px; border-top:1px solid #ddd; padding-top:10px;">
-        <div class="form-group">
-          <label for="realContractorName">실계약자 이름:</label>
-          <input type="text" id="realContractorName" placeholder="실계약자 성함 입력">
-        </div>
-        <div class="form-group">
-          <label for="realContractorPhone">실계약자 연락처:</label>
-          <input type="tel" id="realContractorPhone" placeholder="숫자만 입력 (예: 01012345678)">
-          <p style="font-size: 0.8rem; color: #666; margin-top: 5px;">* 저장 시 자동으로 신규 고객으로 등록되거나, 기존 고객과 연결됩니다.</p>
-        </div>
-        <div class="form-group">
-          <label for="contractorRelation">상담자와의 관계:</label>
-          <select id="contractorRelation">
-            <option value="가족/배우자">가족/배우자</option>
-            <option value="지인/소개">지인/소개</option>
-            <option value="법인/임직원">법인/임직원</option>
-            <option value="기타">기타</option>
-          </select>
-        </div>
-      </div>
-    </div>
-    <div class="form-group">
-      <label for="modalContractDate">계약 체결일:</label>
-      <input type="date" id="modalContractDate">
-    </div>
-    <div class="form-group">
-      <label for="modalContractCarModel">계약 차종:</label>
-      <input type="text" id="modalContractCarModel" placeholder="예: K5 2.0 LPI">
-    </div>
-    <div class="form-group">
-      <label for="modalContractAmount">월 렌탈료 (숫자만):</label>
-      <input type="number" id="modalContractAmount" placeholder="예: 550000">
-    </div>
-    <div class="form-group">
-      <label for="modalContractTerm">계약 기간:</label>
-      <input type="text" id="modalContractTerm" placeholder="예: 48개월">
-    </div>
-    
-    <div class="form-group">
-      <label for="modalContractSummary">계약 특이사항 메모:</label>
-      <textarea id="modalContractSummary" rows="3"></textarea>
-    </div>
-    
-    <div class="modal-actions">
-      <button id="cancelAddContractBtn" class="secondary">취소</button>
-      <button id="saveNewContractBtn">계약 저장</button>
-    </div>
-  </div>
-</div>
   <div class="container">
-        
+    <div class="tab-container">
+      <button id="tabCustomerBtn" class="modern-tab active">📋 고객 관리</button>
+      <button id="tabContractBtn" class="modern-tab">📑 계약 관리</button>
+    </div>
+
     <div class="list-panel" id="listPanel">
-      
       <div class="list-left-pane">
         <div class="filter-panel">
-          <h3>빠른 검색 및 필터</h3>
-          <div class="filter-top-row">
-            <div class="search-group">
-              <label for="filterSearchTerm">통합 검색:</label>
-              <input type="text" id="filterSearchTerm" placeholder="검색어 입력...">
-            </div>
-            <div class="filter-actions">
-              <button id="resetFilterBtn" class="secondary">초기화</button>
-              <button id="applyFilterBtn">검색</button>
-            </div>
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
+            <h3 style="margin:0; font-size:1rem;">검색 및 필터</h3>
+            <button id="resetFilterBtn" class="secondary" style="padding:4px 8px; font-size:0.8rem;">초기화</button>
           </div>
-          <div class="filter-group">
-
-            <div class="form-group">
-              <label for="filterDbType">디비 유형:</label>
-              <select id="filterDbType"><option value="">전체</option></select>
-            </div>
-            <div class="form-group">
-              <label for="filterCustomerStatus">상담 상태:</label>
-              <select id="filterCustomerStatus"><option value="">전체</option><option value="배정됨">배정됨</option><option value="연락 시도 중">연락 시도 중</option><option value="상담 진행 중">상담 진행 중</option><option value="추가 정보 요청">추가 정보 요청</option><option value="상담 완료">상담 완료</option></select>
-            </div>
-
-            <div class="form-group">
-              <label for="filterAssignmentDateFrom">배정일 시작:</label>
-              <input type="date" id="filterAssignmentDateFrom">
-            </div>
-            <div class="form-group">
-              <label for="filterAssignmentDateTo">배정일 종료:</label>
-              <input type="date" id="filterAssignmentDateTo">
-            </div>
-
-            <div class="form-group" style="border-top: 1px dashed #ccc; padding-top: 12px; margin-top: 2px;">
-              <label for="filterLastLogDateFrom">마지막 상담일 시작:</label>
-              <input type="date" id="filterLastLogDateFrom">
-            </div>
-            <div class="form-group" style="border-top: 1px dashed #ccc; padding-top: 12px; margin-top: 2px;">
-              <label for="filterLastLogDateTo">마지막 상담일 종료:</label>
-              <input type="date" id="filterLastLogDateTo">
-            </div>
-            
-            <!-->
-            <div class="form-group">
-              <label for="filterContractStatus">계약 상태:</label>
-              <select id="filterContractStatus"><option value="">전체</option><option value="미해당">미해당</option><option value="계약 제안">계약 제안</option><option value="협상 중">협상 중</option><option value="계약 체결">계약 체결</option><option value="계약 무산">계약 무산</option><option value="계약 종료">계약 종료</option></select>
-            </div>
-            <-->
-
+          <div class="form-group">
+            <label>통합 검색:</label>
+            <div class="search-bar-group"><input type="text" id="filterSearchTerm" placeholder="이름/번호/차종/메모..."><button id="applyFilterBtn">검색</button></div>
+          </div>
+          <hr style="border:0; border-top:1px dashed #ddd; margin:15px 0;">
+          <div class="filter-grid">
+            <div class="form-group full-width"><label>디비 유형:</label><select id="filterDbType"><option value="">전체</option></select></div>
+            <div class="form-group full-width"><label>상담 상태:</label><select id="filterCustomerStatus"><option value="">전체</option></select></div>
+            <div class="form-group"><label>배정일(시작):</label><input type="date" id="filterAssignmentDateFrom"></div>
+            <div class="form-group"><label>배정일(끝):</label><input type="date" id="filterAssignmentDateTo"></div>
+            <div class="form-group"><label>상담일(시작):</label><input type="date" id="filterLastLogDateFrom"></div>
+            <div class="form-group"><label>상담일(끝):</label><input type="date" id="filterLastLogDateTo"></div>
           </div>
         </div>
-        
-        <div id="todoListPanel">
-          <h3>상담 전 고객 (To-Do)</h3>
-          <ul id="todoCustomersList">
-            <li>(기능 구현 예정)</li>
-            </ul>
+        <div id="todoListPanel" style="flex:1; border-top:1px solid #ddd; padding:15px; background:#fff;">
+          <h3 style="font-size:0.95rem; color:#555; margin-bottom:10px;">📌 상담 전 (To-Do)</h3>
+          <ul id="todoCustomersList" style="padding-left:20px; color:#777; font-size:0.9rem;"><li>(기능 준비중)</li></ul>
         </div>
       </div>
-      
       <div class="list-right-pane">
         <div class="list-header">
-          <h2>전체 고객 목록 (검색 결과)</h2>
-          <div class="add-action-panel">
-            <button id="openAddCustomerModalBtn">+ 신규 고객 추가</button>
+          <h2 style="font-size:1.1rem; margin:0;">내 고객 목록</h2>
+          <div style="display:flex; gap:10px; align-items:center;">
+              <button id="logoutBtn" class="secondary" style="padding:6px 10px; font-size:0.8rem;">로그아웃</button>
+              <button id="openAddCustomerModalBtn" style="padding:6px 10px; font-size:0.8rem;">+ 신규 등록</button>
           </div>
         </div>
-        
-        <ul id="assignedCustomersList"><li>로딩 중...</li></ul>
-        
-        <div style="text-align: center; margin-top: 10px; flex-shrink: 0;">
-          <button id="loadMoreBtn" class="secondary hidden">+ 더보기</button>
+        <div class="list-header-row">
+           <span class="col-db">DB유형</span><span class="col-status">상태</span><span class="col-name">고객명</span><span class="col-phone">연락처</span>
+           <span class="col-memo">메모/관심차종</span><span class="col-last">최근상담</span><span class="col-date">배정일</span>
+        </div>
+        <ul id="assignedCustomersList" style="flex:1; overflow-y:auto; margin:0; padding:0; list-style:none;">
+           <li style="padding:20px; text-align:center; color:#999;">로딩 중...</li>
+        </ul>
+        <div style="padding:8px; text-align:center; border-top:1px solid #eee;"><button id="loadMoreBtn" class="secondary hidden">더보기</button></div>
+      </div>
+    </div>
+
+    <div class="list-panel hidden" id="contractListPanel">
+      <div class="list-left-pane">
+        <div class="filter-panel">
+          <h3 style="margin-bottom:15px; font-size:1rem;">계약 검색</h3>
+          <div class="form-group">
+             <label>통합 검색:</label>
+             <div class="search-bar-group"><input type="text" id="contractSearchTerm" placeholder="차종/고객명..."><button id="searchContractBtn">검색</button></div>
+          </div>
+          <hr style="border:0; border-top:1px dashed #ddd; margin:15px 0;">
+          <div class="form-group"><label>계약 상태:</label><select id="filterContractStatus"><option value="">전체</option><option value="진행중">진행중</option><option value="계약 완료">계약 완료</option><option value="출고 완료">출고 완료</option><option value="취소/해지">취소/해지</option></select></div>
+          <div class="form-group"><label>계약일(시작):</label><input type="date" id="filterContractDateFrom"></div>
         </div>
       </div>
-      
+      <div class="list-right-pane">
+         <div class="list-header"><h2 style="font-size:1.1rem; margin:0;">전체 계약 목록</h2></div>
+         <div class="list-header-row">
+           <span class="col-cont-date">계약일</span>
+           <span class="col-cont-car">계약 차종</span>
+           <span class="col-cont-cust">고객명</span>
+           <span class="col-cont-status">상태</span>
+         </div>
+         <div id="globalContractList" style="flex:1; overflow-y:auto;"></div>
+      </div>
     </div>
-    
+
+    <div class="detail-panel hidden" id="contractDetailPanel" style="display:block; overflow-y:auto; background-color:#f4f6f9;">
+      <div class="contract-detail-container">
+        <a href="#" id="dynamicBackBtn" class="back-link">&larr; 돌아가기</a>
+        <div style="background: white; border-radius: 8px; padding: 30px; box-shadow: 0 4px 12px rgba(0,0,0,0.05);">
+          <div class="contract-header"><h2 class="contract-title">계약 상세 정보</h2><span id="viewContStatus" style="font-size:1.2rem; font-weight:bold; color:#555;"></span></div>
+          <div class="info-card-grid">
+            <div class="info-card">
+              <h4>🚗 차량 및 계약 조건</h4>
+              <div class="detail-row"><span class="detail-label">계약 차종</span><span class="detail-value highlight-value" id="viewContCar"></span></div>
+              <div class="detail-row"><span class="detail-label">월 렌탈료</span><span class="detail-value highlight-value" id="viewContAmount"></span></div>
+              <div class="detail-row"><span class="detail-label">계약 기간</span><span class="detail-value" id="viewContTerm"></span></div>
+              <div class="detail-row"><span class="detail-label">계약일</span><span class="detail-value" id="viewContDate"></span></div>
+            </div>
+            <div class="info-card">
+              <h4>👤 고객 정보</h4>
+              <div class="detail-row"><span class="detail-label">계약 명의자</span><span class="detail-value" id="viewContRealName"></span></div>
+              <div class="detail-row"><span class="detail-label">이용자(상담)</span><span class="detail-value" id="viewContCustomerName"></span></div>
+              <div class="detail-row"><span class="detail-label">관계</span><span class="detail-value" id="viewContRelation"></span></div>
+            </div>
+          </div>
+          <div class="info-card" style="margin-top: 20px;">
+            <h4>📝 특이사항 / 메모</h4>
+            <div id="viewContSummary" style="background:#f9f9f9; padding:15px; border-radius:4px; min-height:60px; white-space: pre-wrap; color:#444;"></div>
+          </div>
+          <button id="goToCustomerDetailBtn" class="btn-link-customer">해당 고객 상세 정보 보러가기 &rarr;</button>
+        </div>
+      </div>
+    </div>
+
     <div class="detail-panel hidden" id="customerDetailPanel">
-      
       <div class="detail-info-pane">
         <a href="#" id="backToListBtn" class="back-link">&larr; 목록으로 돌아가기</a>
-        
-        <h2 id="detailCustomerName" style="display: flex; justify-content: space-between; align-items: center;">
-          <span id="detailCustomerNameText">고객 상세 정보</span> <button id="toggleCustomerInfoBtn" class="toggle-section-btn secondary">상세 정보 숨기기</button>
-        </h2>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
+           <h2 id="detailCustomerNameText" style="margin:0; font-size:1.3rem;">고객 상세</h2>
+           <button id="saveCustomerDetailsBtn" style="padding:6px 12px;">정보 저장</button>
+        </div>
         
         <div id="assignmentDetails"> 
-        
-          <div class="details-section" style="border-top: none; margin-top: 0; padding-top: 0;">
-            <!--><h3>고객 기본 정보</h3><--> 
+            <div class="details-section">
+               <div class="details-grid">
+                  <div class="form-group"><label>배정ID:</label><span id="detailAssignmentId" style="display:block; padding:8px; background:#f9f9f9; border-radius:4px; font-size:0.85rem;"></span></div>
+                  <div class="form-group"><label>DB유형:</label><span id="detailDbType" style="display:block; padding:8px; background:#f9f9f9; border-radius:4px; font-size:0.85rem;"></span></div>
+                  <div class="form-group"><label>배정일:</label><span id="detailAssignmentDate" style="display:block; padding:8px; background:#f9f9f9; border-radius:4px; font-size:0.85rem;"></span></div>
+                  <div class="form-group"><label>유입경로:</label><select id="leadSource"><option value="">선택</option></select></div>
+                  <div class="form-group span-2"><label>연락처:</label><div style="display:flex; gap:8px;"><input type="tel" id="detailCustomerPhoneNumber" style="width: 140px;"><button id="savePhoneNumberBtn" class="secondary" style="width:auto; padding:0 15px; white-space:nowrap;">수정</button></div></div>
+                  <div class="form-group"><label>상태:</label><select id="customerStatus"><option value="">선택</option></select></div>
+                  <div class="form-group span-2"><label>고객 메모:</label><input type="text" id="customerMemo"></div>
+                  <div class="form-group"><label>견적번호:</label><input type="text" id="quoteNumber"></div>
+                  <div class="form-group"><label>승인번호:</label><input type="text" id="approvalNumber"></div>
+               </div>
+            </div>
+            <div class="details-section"><h3>상세 정보</h3><div class="details-grid"><div class="form-group"><label>유형:</label><select id="customerType"><option value="">선택</option><option value="개인">개인</option><option value="개인사업자">개인사업자</option><option value="법인">법인</option></select></div><div class="form-group"><label>성별:</label><select id="gender"><option value="">선택</option><option value="남성">남성</option><option value="여성">여성</option></select></div><div class="form-group"><label>연령대:</label><select id="ageGroup"><option value="">선택</option></select></div><div class="form-group"><label>지역(시/도):</label><select id="addressCity"><option value="">선택</option></select></div><div class="form-group span-2"><label>상세주소:</label><input type="text" id="detailAddress"></div><div class="form-group"><label>직업:</label><select id="incomeType"><option value="">선택</option></select></div><div class="form-group"><label>직종:</label><input type="text" id="occupation"></div><div class="form-group"><label>신용:</label><select id="creditInfo"><option value="">선택</option></select></div></div></div>
+            <div class="details-section"><h3>니즈 및 조건</h3><div class="details-grid"><div class="form-group"><label>관심차종:</label><input type="text" id="interestedCarModel"></div><div class="form-group"><label>비교차량:</label><input type="text" id="comparisonCarModel"></div><div class="form-group"><label>보유차량:</label><input type="text" id="ownedCarModel"></div><div class="form-group"><label>용도:</label><select id="carUsage"><option value="">선택</option></select></div><div class="form-group"><label>주행거리:</label><select id="drivingDistance"><option value="">선택</option></select></div><div class="form-group"><label>운전자:</label><input type="text" id="driverScope"></div><div class="form-group"><label>필요시기:</label><select id="expectedContractTiming"><option value="">선택</option></select></div><div class="form-group"><label>계약기간:</label><select id="desiredContractTerm"><option value="">선택</option></select></div><div class="form-group"><label>초기비용:</label><select id="desiredInitialCostType"><option value="">선택</option></select></div><div class="form-group"><label>정비:</label><select id="maintenanceServiceLevel"><option value="">선택</option></select></div><div class="form-group"><label>재구매:</label><select id="isRepurchase"><option value="">선택</option><option value="Y">Y</option><option value="N">N</option></select></div><div class="form-group"><label>결제방식:</label><input type="text" id="paymentMethod"></div></div></div>
             
-            <div class="details-grid"> 
-              
-              <div class="info-item">
-                <strong>배정 ID:</strong> <span id="detailAssignmentId"></span>
-              </div>
-              <div class="info-item">
-                <strong>DB 유형:</strong> <span id="detailDbType"></span>
-              </div>
-              <div class="info-item">
-                <strong>배정일:</strong> <span id="detailAssignmentDate"></span>
-              </div>
-              
-              <div class="form-group">
-                <label for="leadSource">유입 경로:</label>
-                <select id="leadSource"> <option value="">-- 선택 --</option>
-                </select>
-              </div>
-
-              <div class="form-group">
-                <label for="detailCustomerPhoneNumber">연락처:</label>
-                <div class="input-button-group">
-                  <input type="tel" id="detailCustomerPhoneNumber"> 
-                  <button id="savePhoneNumberBtn">저장</button>
+            <div class="details-section" style="background:#f9f9f9; padding:20px; border-radius:6px; margin-top:15px;">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                  <h3 style="margin:0; border:none; color:#333; font-size:1rem;">계약 이력</h3>
+                  <button id="openAddContractModalBtn" class="secondary" style="font-size:0.8rem; padding:4px 8px;">+ 계약 추가</button>
                 </div>
-              </div>
-
-              <div class="form-group">
-                <label for="customerStatus">고객 상태:</label>
-                <select id="customerStatus"><option value="">-- 선택 --</option></select> 
-              </div>
-              
-              <div class="form-group">
-                <label for="customerMemo">고객 메모:</label>
-                <input type="text" id="customerMemo" placeholder="목록에 표시될 간단한 메모...">
-              </div>
-
-              <div class="form-group">
-                <label for="quoteNumber">견적번호:</label>
-                <input type="text" id="quoteNumber" placeholder="견적번호 입력...">
-              </div>
-              
-              <div class="form-group">
-                <label for="approvalNumber">승인번호:</label>
-                <input type="text" id="approvalNumber" placeholder="승인번호 입력...">
-              </div>
-
-            </div> </div>
-          
-          <div id="customerInfoGroup">
-            <div class="details-section"> 
-              <h3>고객 상세 정보 </h3> 
-              <div class="details-grid"> 
-                <div class="form-group">
-                  <label for="customerType">고객 유형:</label>
-                  <select id="customerType"><option value="">-- 선택 --</option><option value="개인">개인</option><option value="개인사업자">개인사업자</option><option value="법인">법인</option></select>
+                <div class="mini-header-row">
+                   <span class="col-cont-date" style="flex:0 0 90px;">계약일</span>
+                   <span class="col-cont-car" style="flex:1; padding-left:10px;">차종</span>
+                   <span class="col-cont-status" style="flex:0 0 80px;">상태</span>
                 </div>
-                <div class="form-group">
-                  <label for="gender">성별:</label>
-                  <select id="gender"><option value="">-- 선택 --</option><option value="남성">남성</option><option value="여성">여성</option></select>
-                </div>
-                <div class="form-group">
-                  <label for="ageGroup">연령대:</label>
-                  <select id="ageGroup"><option value="">-- 선택 --</option></select> 
-                </div>
-                <div class="form-group">
-                  <label for="addressCity">주소 (시/도):</label>
-                  <select id="addressCity"><option value="">-- 선택 --</option></select> 
-                </div>
-                <div class="form-group">
-                  <label for="detailAddress">상세 지역:</label>
-                  <input type="text" id="detailAddress" placeholder="예: 강남구 역삼동">
-                </div>
-                <div class="form-group">
-                  <label for="incomeType">직업:</label>
-                  <select id="incomeType"><option value="">-- 선택 --</option></select> 
-                </div>
-                <div class="form-group">
-                  <label for="occupation">직종:</label>
-                  <input type="text" id="occupation" placeholder="예: 제조업, IT개발">
-                </div>
-                <div class="form-group">
-                  <label for="creditInfo">신용등급:</label>
-                  <select id="creditInfo"><option value="">-- 선택 --</option></select> 
-                </div>
-              </div> 
+                <ul id="contractList" style="list-style:none; padding:0; margin-top:0;"></ul>
             </div>
-            <div class="details-section">
-              <h3>고객 니즈</h3>
-              <div class="details-grid">
-                <div class="form-group"><label for="interestedCarModel">관심 차종:</label><input type="text" id="interestedCarModel"></div>
-                <div class="form-group"><label for="comparisonCarModel">비교 차량:</label><input type="text" id="comparisonCarModel"></div>
-                <div class="form-group"><label for="ownedCarModel">보유 차량:</label><input type="text" id="ownedCarModel"></div>
-                <div class="form-group">
-                  <label for="carUsage">차량 용도:</label>
-                  <select id="carUsage"><option value="">-- 선택 --</option></select> </div>
-                <div class="form-group">
-                    <label for="drivingDistance">주행 거리:</label>
-                    <select id="drivingDistance"><option value="">-- 선택 --</option></select>
-                  </div>
-                 <div class="form-group">
-                  <label for="driverScope">운전자 범위:</label> <input type="text" id="driverScope" placeholder="예: 누구나">
-                </div>
-              </div>
-            </div>
-            <div class="details-section">
-              <h3>희망 계약 조건</h3>
-              <div class="details-grid">
-                <div class="form-group">
-                  <label for="expectedContractTiming">필요 시기:</label>
-                  <select id="expectedContractTiming"><option value="">-- 선택 --</option></select> </div>
-                <div class="form-group">
-                  <label for="desiredContractTerm">계약 기간:</label>
-                  <select id="desiredContractTerm"><option value="">-- 선택 --</option></select> </div>
-                <div class="form-group">
-                  <label for="desiredInitialCostType">초기 비용:</label>
-                  <select id="desiredInitialCostType"><option value="">-- 선택 --</option></select> </div>
-                <div class="form-group">
-                  <label for="maintenanceServiceLevel">정비 서비스:</label>
-                  <select id="maintenanceServiceLevel"><option value="">-- 선택 --</option></select> </div>
-                <!--><div class="form-group"><label for="salesCondition">판매 조건:</label><input type="text" id="salesCondition"></div><-->
-                <div class="form-group">
-                  <label for="isRepurchase">재구매 여부:</label>
-                  <select id="isRepurchase"><option value="">-- 선택 --</option><option value="Y">Y</option><option value="N">N</option></select>
-                </div>
-                <div class="form-group"><label for="paymentMethod">결제 방식:</label><input type="text" id="paymentMethod" placeholder="예: 현금, 카드"></div> </div>
-            </div>
-          </div>
-
-          <div class="details-section">
-              <button id="saveCustomerDetailsBtn" style="margin-top: 5px; margin-bottom: 5px;">고객 정보 저장</button>
-          </div>
-          
-          <div class="details-section contract-history-section" style="background-color: #f9f9f9; padding: 15px; border-radius: 5px;">
-            <h3 style="display: flex; justify-content: space-between; align-items: center;">
-              계약 이력
-              <button id="openAddContractModalBtn" class="secondary" style="font-size: 0.9rem; padding: 5px 10px; min-height: auto; height: auto; line-height: 1.5;">+ 신규 계약 추가</button>
-            </h3>
-            <ul id="contractList" style="list-style: none; padding: 0; margin-top: 10px; max-height: 300px; overflow-y: auto; border-top: 1px solid #eee;">
-              <li style="padding: 10px; text-align: center; color: #777;">(계약 이력이 없습니다.)</li>
-            </ul>
-          </div>
-
-          </div>
+        </div>
       </div>
-        
+      
       <div class="detail-log-pane">
-        <h3>상담 상세 기록</h3>
-        
-        <div class="log-entries" id="consultationLogs">
-          <p style="padding: 20px; text-align: center; color: #777; margin-top: 30px;">
-            고객을 선택하면 상담 기록이 표시됩니다.
-          </p>
-        </div>
-        
-        <div class="log-add-section">
-          <h3>새 상담 기록 추가</h3>
-          <div class="form-group">
-            <textarea id="newLogContent" placeholder="상담 내용을 입력하세요..." spellcheck="false"></textarea>
-          </div>
-          <button id="addLogBtn" style="width: 100%;">기록 추가</button>
-        </div>
+         <h3 style="margin:15px 15px 0 15px; font-size:1.1rem;">상담 기록</h3>
+         <div id="consultationLogs" class="log-entries"></div>
+         <div class="log-add-section">
+           <textarea id="newLogContent" rows="4" placeholder="상담 내용을 입력하세요"></textarea>
+           <button id="addLogBtn" style="width:100%; margin-top:8px;">기록 등록</button>
+         </div>
       </div>
-
     </div>
-  </div> <script>
+  </div>
+  <script>
   <?!= HtmlService.createTemplateFromFile('JavaScript').getRawContent() ?>
-</script>
+  </script>
 </body>
 </html>
