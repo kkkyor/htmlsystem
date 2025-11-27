@@ -315,22 +315,45 @@
     document.getElementById('detailCustomerNameText').textContent = data.customerName;
   }
 
-  // ★ [추가 수정] 상담 로그 렌더링 (카드 디자인 적용)
+  // ★ [수정됨] 상담 로그 렌더링 (수정/삭제 버튼 추가)
   function renderLogs(logs) {
     const div = document.getElementById('consultationLogs');
     div.innerHTML = '';
+    
     if(!logs || logs.length === 0) {
       div.innerHTML = '<p style="text-align:center; padding:20px; color:#777;">기록 없음</p>';
       return;
     }
+
     logs.forEach(l => {
       const card = document.createElement('div');
-      card.className = 'log-entry-card'; // CSS에서 정의한 카드 스타일
+      card.className = 'log-entry-card';
       
       const timeStr = new Date(l.logTimestamp).toLocaleString();
+      // 작성자 표시 (없으면 '시스템' 등으로 처리)
+      const writer = l.userName || '상담원'; 
+      
+      // 본인 글인지 확인 (현재 로그인한 사람과 작성자가 같으면 버튼 표시)
+      // (currentUserName 변수는 전역변수에 있습니다)
+      const isMyLog = (l.userName === currentUserName);
+      
+      let buttonsHtml = '';
+      if (isMyLog) {
+          buttonsHtml = `
+            <div class="log-actions" style="display:flex; gap:8px; margin-top:8px; justify-content:flex-end;">
+                <button onclick="editLog('${l.logId}', this)" class="secondary" style="padding:2px 8px; font-size:0.8rem;">수정</button>
+                <button onclick="deleteLog('${l.logId}')" class="secondary" style="padding:2px 8px; font-size:0.8rem; background:#dc3545; border:none;">삭제</button>
+            </div>
+          `;
+      }
+
       card.innerHTML = `
-        <span class="log-time">${timeStr}</span>
-        <div class="log-content">${escapeHtml(l.logContent)}</div>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:5px;">
+            <span class="log-time" style="color:#007bff; font-weight:bold; font-size:0.8rem;">${timeStr}</span>
+            <span style="font-size:0.75rem; color:#999;">${escapeHtml(writer)}</span>
+        </div>
+        <div class="log-content" id="content-${l.logId}" style="white-space: pre-wrap; line-height:1.4;">${escapeHtml(l.logContent)}</div>
+        ${buttonsHtml}
       `;
       div.appendChild(card);
     });
@@ -527,6 +550,107 @@
   }
 
 
+
+
+
+// [JavaScript.html] Cloud Run 주소 확인
+// ★ 뒤에 경로가 바뀌었습니다 (주의!)
+// 예: https://...run.app  (뒤에 /analyze 같은거 붙이지 마시고 도메인까지만)
+const CLOUD_RUN_BASE_URL = "https://rental-analyzer-812042135518.asia-northeast3.run.app"; 
+
+const btnAnalyze = document.getElementById('btnAnalyzeVoice');
+const fileInput = document.getElementById('voiceFileInput');
+
+if (btnAnalyze && fileInput) {
+  btnAnalyze.addEventListener('click', () => {
+    fileInput.value = ''; 
+    fileInput.click();
+  });
+
+  fileInput.addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    if (!confirm(`'${file.name}' 분석을 시작하시겠습니까?\n(1시간 이상 파일도 무료로 처리가능)`)) return;
+
+    showLoader(); 
+    
+    try {
+      // 고유 ID 생성
+      const fileId = `upload_${Date.now()}_${Math.floor(Math.random()*1000)}`;
+      
+      // 10MB 단위로 쪼개기 (Cloud Run 제한 32MB 회피용)
+      const CHUNK_SIZE = 10 * 1024 * 1024; 
+      const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+      
+      // 1. 조각 업로드 (반복)
+      for (let i = 0; i < totalChunks; i++) {
+          const start = i * CHUNK_SIZE;
+          const end = Math.min(file.size, start + CHUNK_SIZE);
+          const chunk = file.slice(start, end);
+          
+          // 진행률 표시
+          const percent = Math.round(((i) / totalChunks) * 100);
+          setStatusMessage(`📡 전송 중... ${percent}% (${i+1}/${totalChunks})`);
+
+          const formData = new FormData();
+          formData.append("file", chunk);
+          formData.append("file_id", fileId);
+          formData.append("chunk_index", i);
+
+          const res = await fetch(`${CLOUD_RUN_BASE_URL}/upload-chunk`, {
+              method: "POST",
+              body: formData
+          });
+          
+          if (!res.ok) throw new Error(`Chunk ${i} upload failed`);
+      }
+
+      // 2. 합체 및 분석 요청
+      setStatusMessage("🤖 AI 분석 중... (잠시만 기다려주세요)");
+      
+      // 파일 타입 안전장치
+      let mimeType = file.type;
+      if (!mimeType && file.name.toLowerCase().endsWith('.m4a')) mimeType = 'audio/mp4';
+      if (!mimeType) mimeType = 'audio/mp3';
+
+      const finalForm = new FormData();
+      finalForm.append("file_id", fileId);
+      finalForm.append("total_chunks", totalChunks);
+      finalForm.append("file_name", file.name);
+      finalForm.append("mime_type", mimeType);
+
+      const analyzeRes = await fetch(`${CLOUD_RUN_BASE_URL}/analyze-chunked`, {
+          method: "POST",
+          body: finalForm
+      });
+
+      const result = await analyzeRes.json();
+
+      if (!result.success) {
+        throw new Error(result.error);
+      }
+      
+      const parsedData = result.data;
+      onAnalysisSuccess({ success: true, data: parsedData });
+
+    } catch (err) {
+      alert("❌ 오류 발생: " + err.message);
+      console.error(err);
+    } finally {
+      hideLoader();
+    }
+  });
+}
+
+// [헬퍼] 로딩 메시지 변경 (loader 내부에 텍스트가 있다면)
+function setStatusMessage(msg) {
+  const loaderText = document.querySelector('#loader p');
+  if(loaderText) loaderText.textContent = msg;
+}
+
+  // (onAnalysisSuccess 함수는 이전 답변에 드린 것 그대로 사용하시면 됩니다.)
+
   // ============================================================================
   // [4] 비즈니스 로직 (API 호출)
   // ============================================================================
@@ -687,7 +811,13 @@
       document.getElementById('customerDetailPanel').classList.remove('hidden');
 
       displayAssignmentDetails({ assignment: toUiData(cust) });
-      renderLogs(logs.map(l => ({ logTimestamp: l.log_timestamp, logContent: l.log_content })));
+      // log_id와 user_name(작성자) 정보까지 포함해서 전달
+      renderLogs(logs.map(l => ({ 
+          logId: l.log_id, 
+          logTimestamp: l.log_timestamp, 
+          logContent: l.log_content,
+          userName: l.user_name 
+      })));
       renderContracts(contracts);
 
     } catch(e) {
@@ -1205,3 +1335,302 @@
     }
 
   }
+
+
+function onAnalysisSuccess(response) {
+  hideLoader();
+
+  if (!response.success) {
+    alert("❌ 분석 실패:\n" + response.error);
+    return;
+  }
+
+  let data = response.data;
+  // 데이터가 배열([])로 오면 첫 번째 것을 꺼내는 안전장치
+  if (Array.isArray(data)) {
+      console.log("배열 데이터 감지됨, 첫 번째 항목 추출");
+      data = data[0];
+  }
+  
+  // 데이터가 비어있는지 확인
+  if (!data || Object.keys(data).length === 0) {
+      alert("⚠️ 분석은 성공했으나 데이터가 비어있습니다.");
+      return;
+  }
+
+  console.log("최종 처리 데이터:", data); // 디버깅용 로그
+  
+  const fileUrl = "업로드 및 분석 완료"; 
+
+  alert("✅ 분석이 완료되었습니다.\n내용을 확인해주세요.");
+
+  // [JavaScript.html] 내부 smartFill 함수 수정
+
+  const smartFill = (id, newVal) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    
+    // 값이 없거나 공백이면 패스
+    if (newVal === undefined || newVal === null || String(newVal).trim() === "") return;
+
+    const currentVal = el.value.trim();
+    
+    // 이미 값이 채워져 있으면 건너뛰기
+    const isPlaceholder = currentVal === '' || 
+                          currentVal.includes('확인') || 
+                          currentVal.includes('미정') || 
+                          currentVal.includes('추정');
+    
+    if (!isPlaceholder) return; 
+
+    // ★ [핵심 수정 1] AI가 준 값을 'NFC(완성형)'로 통일하고 공백 제거
+    const normalizeStr = (str) => String(str).normalize("NFC").replace(/\s+/g, '').toLowerCase();
+    const cleanNewVal = normalizeStr(newVal);
+
+    // 1. SELECT 태그 (드롭박스) 처리
+    if (el.tagName.toUpperCase() === 'SELECT') {
+        let bestMatch = "";
+        
+        for (let i = 0; i < el.options.length; i++) {
+            const optVal = el.options[i].value;
+            const optText = el.options[i].text;
+            
+            // ★ [핵심 수정 2] 비교 대상도 'NFC'로 통일
+            const cleanOptVal = normalizeStr(optVal);
+            const cleanOptText = normalizeStr(optText);
+
+            // 정확히 일치하거나 포함 관계면 선택
+            if (cleanOptVal === cleanNewVal || 
+                cleanOptText === cleanNewVal ||
+                (cleanOptVal.length > 0 && cleanNewVal.includes(cleanOptVal)) || 
+                (cleanOptText.length > 0 && cleanNewVal.includes(cleanOptText))) {
+                
+                bestMatch = optVal;
+                break; // 찾았으면 루프 종료
+            }
+        }
+        
+        if (bestMatch) {
+            el.value = bestMatch; // 기존 옵션 선택 (Clean Data)
+        } else {
+            // 정규화를 했는데도 도저히 못 찾은 경우에만 강제 주입 (최후의 수단)
+            console.warn(`[매칭 실패] 정규화 후에도 불일치: ${cleanNewVal}`);
+            
+            // (선택 사항) 강제 주입을 막고 싶다면 아래 else 블록을 지우거나 주석 처리하세요.
+            // 하지만 '셀토스' 처럼 DB에 없는 차종이 나올 수도 있으니 유지하는 게 낫습니다.
+            let optExists = false;
+            for(let j=0; j<el.options.length; j++) {
+                if(el.options[j].value == newVal) { optExists = true; break; }
+            }
+            
+            if (!optExists) {
+                const newOpt = document.createElement('option');
+                newOpt.value = newVal;
+                newOpt.text = newVal; 
+                newOpt.style.color = "blue"; 
+                el.add(newOpt);
+            }
+            el.value = newVal;
+        }
+        highlight(el);
+
+    } else {
+        // INPUT, TEXTAREA 등
+        el.value = newVal;
+        highlight(el);
+    }
+  };
+
+  // 시각적 효과 (초록색 깜빡임)
+  const highlight = (el) => {
+      el.style.backgroundColor = "#d1e7dd"; 
+      setTimeout(() => el.style.backgroundColor = "", 3000);
+  };
+
+  // -------------------------------------------------------
+  // [데이터 매핑 실행] 
+  // -------------------------------------------------------
+  smartFill('customerType', data.customer_type);
+  smartFill('gender', data.gender);
+  smartFill('ageGroup', data.age_group);
+  smartFill('addressCity', data.address_city);
+  smartFill('incomeType', data.income_type);
+  smartFill('creditInfo', data.credit_info);
+  smartFill('occupation', data.occupation);
+  
+  smartFill('interestedCarModel', data.interested_car_model);
+  smartFill('comparisonCarModel', data.comparison_car_model);
+  smartFill('ownedCarModel', data.owned_car_model);
+  smartFill('carUsage', data.car_usage);
+  smartFill('drivingDistance', data.driving_distance);
+  smartFill('driverScope', data.driver_scope);
+  smartFill('expectedContractTiming', data.expected_contract_timing);
+  smartFill('desiredContractTerm', data.desired_contract_term);
+  smartFill('desiredInitialCostType', data.desired_initial_cost_type);
+  smartFill('maintenanceServiceLevel', data.maintenance_service_level);
+
+  // 전화번호 포맷팅
+  if (data.customer_phone) {
+      const formatted = typeof formatPhoneNumber_Client === 'function' 
+                        ? formatPhoneNumber_Client(data.customer_phone) 
+                        : data.customer_phone;
+      smartFill('detailCustomerPhoneNumber', formatted);
+  }
+
+  // 고객 메모
+  const memoEl = document.getElementById('customerMemo');
+  if (memoEl && data.summary) {
+    const currentMemo = memoEl.value;
+    if (!currentMemo.includes(data.summary)) {
+        const prefix = currentMemo ? " | " : "";
+        memoEl.value += prefix + "[AI요약] " + data.summary;
+        highlight(memoEl);
+    }
+  }
+
+  // 상담 로그
+  const logEl = document.getElementById('newLogContent');
+  if (logEl && data.summary) {
+    logEl.value = `[🎙️ 녹음 분석 결과]\n\n📄 핵심요약:\n${data.summary}\n\n📝 상세내용:\n${data.details || '(내용 없음)'}`;
+    highlight(logEl);
+    
+    const addLogBtn = document.getElementById('addLogBtn');
+    if(addLogBtn) addLogBtn.focus();
+  }
+}
+
+// [신규 기능] 로그 삭제 함수
+async function deleteLog(logId) {
+    if (!confirm("정말 이 상담 기록을 삭제하시겠습니까?")) return;
+
+    showLoader();
+    const { error } = await supabase
+        .from('consultation_logs')
+        .delete()
+        .eq('log_id', logId);
+    
+    hideLoader();
+
+    if (error) {
+        alert("삭제 실패: " + error.message);
+    } else {
+        // 화면 갱신 (현재 보고 있는 고객 상세 다시 로드)
+        if(currentAssignmentId) selectCustomer(currentAssignmentId);
+    }
+}
+
+// [신규 기능] 로그 수정 함수
+async function editLog(logId, btnElement) {
+    // 1. 현재 내용을 가져옴
+    const contentDiv = document.getElementById(`content-${logId}`);
+    const currentContent = contentDiv.textContent;
+
+    // 2. 간단하게 prompt 창으로 수정 입력 받기 (UI를 더 예쁘게 하려면 모달 사용)
+    //    줄바꿈이 많은 긴 글일 수 있으니 textarea가 낫지만, 빠른 구현을 위해 prompt 사용 예시입니다.
+    //    (긴 글 수정이 불편하다면 별도 모달 UI가 필요합니다.)
+    
+    // 2-1. [개선] Prompt 대신 그 자리를 textarea로 바꿔치기 (인라인 수정)
+    const card = btnElement.closest('.log-entry-card');
+    const actionsDiv = btnElement.closest('.log-actions');
+    
+    // 이미 수정 모드라면 중단
+    if (card.querySelector('textarea')) return;
+
+    // 기존 뷰 숨기고 에디터 표시
+    contentDiv.style.display = 'none';
+    actionsDiv.style.display = 'none';
+
+    const editorDiv = document.createElement('div');
+    editorDiv.innerHTML = `
+        <textarea style="width:100%; height:100px; margin:5px 0;">${currentContent}</textarea>
+        <div style="text-align:right; gap:5px; display:flex; justify-content:flex-end;">
+            <button id="save-${logId}" style="padding:4px 10px; font-size:0.8rem;">저장</button>
+            <button id="cancel-${logId}" class="secondary" style="padding:4px 10px; font-size:0.8rem;">취소</button>
+        </div>
+    `;
+    card.appendChild(editorDiv);
+
+    // 저장 버튼 클릭
+    document.getElementById(`save-${logId}`).onclick = async () => {
+        const newText = editorDiv.querySelector('textarea').value;
+        if (!newText.trim()) return alert("내용을 입력하세요.");
+
+        showLoader();
+        const { error } = await supabase
+            .from('consultation_logs')
+            .update({ log_content: newText, updated_at: new Date().toISOString() }) // updated_at 컬럼이 있다면 업데이트
+            .eq('log_id', logId);
+        hideLoader();
+
+        if (error) {
+            alert("수정 실패: " + error.message);
+        } else {
+            // 성공 시 목록 갱신
+            if(currentAssignmentId) selectCustomer(currentAssignmentId);
+        }
+    };
+
+    // 취소 버튼 클릭
+    document.getElementById(`cancel-${logId}`).onclick = () => {
+        editorDiv.remove();
+        contentDiv.style.display = 'block';
+        actionsDiv.style.display = 'flex';
+    };
+}
+
+// [신규 기능] 로그 수정 함수 (에러 수정됨)
+async function editLog(logId, btnElement) {
+    // 1. 현재 내용을 가져옴
+    const contentDiv = document.getElementById(`content-${logId}`);
+    const currentContent = contentDiv.textContent;
+
+    const card = btnElement.closest('.log-entry-card');
+    const actionsDiv = btnElement.closest('.log-actions');
+    
+    // 이미 수정 모드라면 중단
+    if (card.querySelector('textarea')) return;
+
+    // 기존 뷰 숨기고 에디터 표시
+    contentDiv.style.display = 'none';
+    actionsDiv.style.display = 'none';
+
+    const editorDiv = document.createElement('div');
+    editorDiv.innerHTML = `
+        <textarea style="width:100%; height:100px; margin:5px 0; border:1px solid #ccc; padding:5px;">${currentContent}</textarea>
+        <div style="text-align:right; gap:5px; display:flex; justify-content:flex-end;">
+            <button id="save-${logId}" style="padding:4px 10px; font-size:0.8rem;">저장</button>
+            <button id="cancel-${logId}" class="secondary" style="padding:4px 10px; font-size:0.8rem;">취소</button>
+        </div>
+    `;
+    card.appendChild(editorDiv);
+
+    // 저장 버튼 클릭
+    document.getElementById(`save-${logId}`).onclick = async () => {
+        const newText = editorDiv.querySelector('textarea').value;
+        if (!newText.trim()) return alert("내용을 입력하세요.");
+
+        showLoader();
+        
+        // ★ [수정됨] updated_at 제거 (테이블에 없으므로 내용만 수정)
+        const { error } = await supabase
+            .from('consultation_logs')
+            .update({ log_content: newText }) 
+            .eq('log_id', logId);
+            
+        hideLoader();
+
+        if (error) {
+            alert("수정 실패: " + error.message);
+        } else {
+            // 성공 시 목록 갱신
+            if(currentAssignmentId) selectCustomer(currentAssignmentId);
+        }
+    };
+
+    // 취소 버튼 클릭
+    document.getElementById(`cancel-${logId}`).onclick = () => {
+        editorDiv.remove();
+        contentDiv.style.display = 'block';
+        actionsDiv.style.display = 'flex';
+    };
+}
