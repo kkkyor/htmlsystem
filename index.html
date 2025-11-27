@@ -162,6 +162,177 @@
     .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 9999; display: flex; justify-content: center; align-items: center; }
     .modal-content { background: white; padding: 25px; border-radius: 8px; width: 90%; max-width: 450px; box-shadow: 0 5px 15px rgba(0,0,0,0.2); }
     @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+    /* ----------------------------------------------------------------- */
+    /* 4. 모바일 반응형 스타일 (추가됨) */
+    /* ----------------------------------------------------------------- */
+    @media (max-width: 768px) {
+      /* [핵심 수정 1] 모든 요소의 패딩/테두리를 너비에 포함시킴 (가로 터짐 방지) */
+      * { box-sizing: border-box; }
+
+      /* [핵심 수정 2] 가로 스크롤 강제 차단 */
+      html, body {
+        overflow-x: hidden !important;
+        width: 100%;
+        position: relative;
+      }
+
+      /* 전체 컨테이너: 패딩 제거 및 꽉 채우기 */
+      body { padding: 0; margin: 0; background: #fff; }
+      
+      .container { 
+        width: 100%; 
+        height: auto; 
+        min-height: 100vh; 
+        border-radius: 0; 
+        box-shadow: none; 
+        overflow: visible; /* 내부 스크롤 허용 */
+        display: block;    /* Flex 해제 (모바일은 세로 배치이므로) */
+      }
+
+      /* 탭 버튼 크기 키우기 */
+      .modern-tab { padding: 14px 0; font-size: 1rem; border-radius: 0; }
+      .tab-container { margin: 0; border-radius: 0; position: sticky; top: 0; z-index: 10; border-bottom: 1px solid #eee; }
+
+      /* 패널 레이아웃: 세로 배치 */
+      .list-panel, .detail-panel {
+        display: block; /* Flex 대신 Block 사용 */
+        width: 100%;
+        height: auto;
+      }
+
+      /* 좌/우 패널 너비 100% */
+      .list-left-pane, .list-right-pane, .detail-log-pane, .detail-info-pane {
+        width: 100%;
+        height: auto;
+        border: none;
+        display: block;
+      }
+
+      /* 1. [목록 화면] 필터 영역 */
+      .list-left-pane {
+        border-bottom: 8px solid #f0f2f5; /* 구분선 */
+      }
+      .filter-panel {
+        padding: 15px;
+        max-height: 250px; /* 너무 길지 않게 스크롤 */
+        overflow-y: auto;
+      }
+
+      /* 2. [목록 화면] 리스트 디자인 변경 (표 -> 카드형) */
+      .list-header-row { display: none; /* 헤더 숨김 */ }
+      
+      #assignedCustomersList li, .contract-row {
+        flex-wrap: wrap; /* 줄바꿈 허용 */
+        padding: 15px;
+        position: relative;
+        align-items: flex-start;
+        gap: 5px;
+        border-bottom: 1px solid #eee;
+      }
+
+      /* 컬럼별 배치 재조정 (중요 정보 위주로) */
+      .col-name { 
+        flex: 1 1 100%; 
+        font-size: 1.1rem; text-align: left; margin-bottom: 4px; 
+        order: 1; 
+      }
+      .col-status { 
+        position: absolute; top: 15px; right: 15px; 
+        order: 2; 
+      }
+      .col-phone { 
+        flex: 1 1 100%; text-align: left; color: #666; font-size: 0.9rem; 
+        order: 3; margin-bottom: 8px;
+      }
+      .col-memo { 
+        flex: 1 1 100%; text-align: left; padding: 0; 
+        white-space: normal; /* 줄바꿈 허용 */
+        background: #f8f9fa; padding: 8px; border-radius: 4px; font-size: 0.85rem;
+        order: 4; 
+      }
+      
+      /* 모바일에서 공간 부족으로 숨길 항목들 */
+      .col-db, .col-last, .col-date { display: none; }
+
+      /* 3. [상세 화면] 배치 조정 */
+      .detail-info-pane {
+        padding: 15px;
+        height: auto;
+      }
+      .detail-log-pane {
+        flex: 1 0 auto;
+        border-top: 8px solid #f0f2f5;
+        height: auto; 
+        min-height: 400px;
+      }
+      
+      /* 폼 요소 모바일 최적화 */
+      .details-grid {
+        grid-template-columns: 1fr; /* 한 줄에 하나씩 */
+      }
+      .span-2 { grid-column: span 1; } /* 2칸 차지하던 것도 1칸으로 */
+      
+      input, select, textarea, button {
+        font-size: 16px; /* iOS 확대 방지 */
+        min-height: 44px; /* 터치 영역 확보 */
+      }
+      
+      /* 상단 버튼 그룹 줄바꿈 허용 */
+      .detail-info-pane > div:first-child {
+        flex-wrap: wrap;
+        gap: 10px;
+      }
+      
+      /* 모달 창 꽉 차게 */
+      .modal-content {
+        width: 95%;
+        max-height: 90vh;
+        overflow-y: auto;
+      }
+    }
+
+    /* ----------------------------------------------------------------- */
+    /* 5. 상세화면 흔들림 방지 패치 (추가됨) */
+    /* ----------------------------------------------------------------- */
+    @media (max-width: 768px) {
+      
+      /* 1. 상단 버튼 그룹이 화면을 뚫지 않게 강제 줄바꿈 허용 */
+      .detail-info-pane > div:first-child > div {
+        flex-wrap: wrap !important;
+        justify-content: flex-end;
+        max-width: 100%; /* 화면 너비 초과 방지 */
+      }
+
+      /* 2. [중요] '계약 이력' 박스의 과도한 여백(20px)을 10px로 축소 */
+      /* (HTML에 인라인 스타일로 padding:20px이 박혀있어 !important로 덮어써야 함) */
+      .details-section {
+        padding: 10px !important; 
+        width: 100% !important;
+        box-sizing: border-box !important;
+      }
+
+      /* 3. 계약 이력 리스트 내부의 고정 너비 해제 */
+      .mini-header-row span, #contractList li span {
+        font-size: 0.8rem; /* 글자 크기 약간 축소 */
+      }
+      /* 날짜와 상태 컬럼 너비를 조금 줄여서 공간 확보 */
+      .col-cont-date { flex: 0 0 80px !important; }
+      .col-cont-status { flex: 0 0 60px !important; }
+
+      /* 4. 혹시 모를 계약 상세 화면(info-card)의 그리드 터짐 방지 */
+      .info-card-grid {
+        grid-template-columns: 1fr !important; /* 무조건 1단 배열 */
+      }
+      
+      /* 5. 텍스트가 너무 길면 말줄임(...) 처리하여 가로 스크롤 방지 */
+      .form-group label, .detail-label, .detail-value {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+    }
+
   </style>
 </head>
 
@@ -336,13 +507,21 @@
 
     <div class="detail-panel hidden" id="customerDetailPanel">
       <div class="detail-info-pane">
-        <a href="#" id="backToListBtn" class="back-link">&larr; 목록으로 돌아가기</a>
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
-           <h2 id="detailCustomerNameText" style="margin:0; font-size:1.3rem;">고객 상세</h2>
-           <button id="saveCustomerDetailsBtn" style="padding:6px 12px;">정보 저장</button>
+           <a href="#" id="backToListBtn" class="back-link" style="margin-bottom:0;">&larr; 목록으로 돌아가기</a>
+           
+           <div style="display:flex; gap:10px; align-items:center;">
+              <input type="file" id="voiceFileInput" accept="audio/*, video/*" style="display:none">
+              <button id="btnAnalyzeVoice" style="background-color:#198754; color:white; display:flex; align-items:center; gap:5px; padding:6px 12px;">
+                 <span>🎙️ AI 상담 분석</span>
+              </button>
+              <button id="saveCustomerDetailsBtn" style="padding:6px 12px;">정보 저장</button>
+           </div>
         </div>
         
-        <div id="assignmentDetails"> 
+        <h2 id="detailCustomerNameText" style="margin:0; font-size:1.3rem; margin-bottom:15px;">고객 상세</h2>
+        
+        <div id="assignmentDetails">
             <div class="details-section">
                <div class="details-grid">
                   <div class="form-group"><label>배정ID:</label><span id="detailAssignmentId" style="display:block; padding:8px; background:#f9f9f9; border-radius:4px; font-size:0.85rem;"></span></div>
