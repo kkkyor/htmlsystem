@@ -9,6 +9,9 @@
   let session = null;
   let currentUserEmail = null;
   let currentUserName = "사용자";
+
+  let currentSortColumn = 'assignment_date'; // 기본 정렬 기준
+  let currentSortAscending = false;          // 기본: 내림차순 (최신순)
   
   // 고객 목록용 변수
   let currentAssignmentId = null;
@@ -96,6 +99,10 @@
     const btnCust = document.getElementById('tabCustomerBtn');
     const btnCont = document.getElementById('tabContractBtn');
 
+    // 탭 전환 시 상세 화면의 출처(Source) 상태 초기화
+    window.customerDetailSource = null;
+    currentContractSource = 'contract_list';
+
     if (mode === 'customer') {
       customerPanel.classList.remove('hidden');
       if(contractPanel) contractPanel.classList.add('hidden');
@@ -156,7 +163,7 @@
       quoteNumber: dbData.quote_number,
       approvalNumber: dbData.approval_number,
       occupation: dbData.occupation,
-      lastLogDate: dbData.last_log_date || dbData.updated_at 
+      lastLogDate: dbData.last_log_date
     };
   }
 
@@ -400,14 +407,15 @@
   // source: 'contract_list' (기본값) 또는 'customer_detail'
   let currentContractSource = 'contract_list'; 
   
-  // [수정] 계약 상세 보기 함수 (명의자/이용자 구분 로직 강화)
-  function viewContractDetail(contractData, source = 'contract_list') {
+  // [JavaScript.html] viewContractDetail 함수 (완벽 수정 버전)
+  
+  async function viewContractDetail(contractData, source = 'contract_list') {
     currentViewingContract = contractData;
     currentContractSource = source;
 
     // 패널 전환
     document.getElementById('listPanel').classList.add('hidden');
-    document.getElementById('contractListPanel').classList.add('hidden');
+    if(document.getElementById('contractListPanel')) document.getElementById('contractListPanel').classList.add('hidden');
     document.getElementById('customerDetailPanel').classList.add('hidden');
     document.getElementById('contractDetailPanel').classList.remove('hidden');
 
@@ -427,7 +435,7 @@
         if(el) el.textContent = txt || '-';
     };
 
-    // 기본 정보 채우기
+    // 1. 기본 정보 채우기
     setTxt('viewContStatus', contractData.contract_status);
     setTxt('viewContDate', formatDate(contractData.contract_date));
     setTxt('viewContCar', contractData.contract_car_model);
@@ -435,30 +443,68 @@
     setTxt('viewContTerm', contractData.contract_term);
     setTxt('viewContSummary', contractData.contract_summary);
     
-    // ★ [핵심] 명의자 및 관계 표시 로직
-    // 1. assignment_id에 연결된 사람이 '서류상 계약 명의자'입니다.
+    // 2. 명의자(실계약자) 정보 채우기
+    // contractData.customers는 항상 assignment_id(명의자)와 조인된 정보입니다.
     const realContractorName = (contractData.customers && contractData.customers.customer_name) 
                                ? contractData.customers.customer_name 
                                : '(정보 없음)';
-    
     const relation = contractData.relationship || '본인';
 
-    setTxt('viewContRealName', realContractorName); // 계약 명의자
-    setTxt('viewContRelation', relation);           // 관계
+    setTxt('viewContRealName', realContractorName); 
+    setTxt('viewContRelation', relation);           
 
-    // 2. 연결된 고객(이용자/상담자) 표시
-    // 만약 source가 'customer_detail'이면 현재 보고 있던 고객이 '이용자'일 확률이 높음
-    // 하지만 DB 구조상 consultant_id가 있다면 그 사람이 상담자입니다.
-    // 여기서는 UI 단순화를 위해 "현재 시스템에 로그인한 영업사원이 관리하는 원래 고객"을 문맥으로 판단합니다.
-    
-    if (source === 'customer_detail') {
-        // 고객 상세에서 넘어왔다면, 그 고객이 이 계약과 관련된 '이용자' 혹은 '상담자'임
-        const currentCustName = document.getElementById('detailCustomerNameText').textContent;
-        setTxt('viewContCustomerName', currentCustName);
-    } else {
-        // 계약 목록에서 왔다면, 명의자 이름을 그대로 보여주거나 별도 로직 필요
-        // (여기서는 명의자와 동일하게 표시하되, 관계가 본인이면 괄호 생략)
+    // 3. ★ [수정됨] 이용자(상담) 이름 표시 로직
+    const contractorId = contractData.assignment_id; 
+    const consultantId = contractData.consultant_id || contractData.assignment_id;
+
+    // Case 1: 본인 계약 (명의자 = 상담자)
+    if (contractorId === consultantId) {
         setTxt('viewContCustomerName', realContractorName);
+    } 
+    // Case 2: 타인 명의 계약
+    else {
+        // 현재 상세 화면에 떠있는 고객이 '상담자' 본인인지 확인
+        // (currentAssignmentId는 현재 상세 패널에 로드된 고객 ID입니다)
+        const isViewingConsultantPage = (currentAssignmentId === consultantId);
+
+        if (source === 'customer_detail' && isViewingConsultantPage) {
+             // 상황: 상담자 본인의 상세 페이지에서 보고 있음 -> 현재 페이지 이름을 그대로 사용
+             const currentCustName = document.getElementById('detailCustomerNameText').textContent;
+             setTxt('viewContCustomerName', currentCustName);
+        } else {
+             // 상황: 실계약자 페이지에서 보고 있거나, 전체 리스트에서 들어옴 
+             // -> 상담자 이름은 별도로 조회해야 함
+             setTxt('viewContCustomerName', '(조회 중...)');
+             
+             const { data: consultantData } = await supabase
+                 .from('customers')
+                 .select('customer_name')
+                 .eq('assignment_id', consultantId)
+                 .maybeSingle();
+             
+             if (consultantData) {
+                 setTxt('viewContCustomerName', consultantData.customer_name);
+             } else {
+                 setTxt('viewContCustomerName', '(정보 없음)');
+             }
+        }
+    }
+
+    // 4. 버튼 분기 로직 (기존 유지)
+    const singleBtnArea = document.getElementById('singleButtonArea');
+    const dualBtnArea = document.getElementById('dualButtonArea');
+    
+    if (contractorId !== consultantId) {
+          singleBtnArea.classList.add('hidden');
+          dualBtnArea.classList.remove('hidden');
+          
+          const contractorLabelName = (contractData.customers && contractData.customers.customer_name) ? contractData.customers.customer_name : '실계약자';
+          document.getElementById('goToContractorBtn').innerHTML = `📑 실계약자(${contractorLabelName}) &rarr;`;
+          
+          // 상담자 버튼 텍스트도 업데이트할 수 있지만, 이름을 모를 땐 '상담 고객'으로 둡니다.
+    } else {
+          singleBtnArea.classList.remove('hidden');
+          dualBtnArea.classList.add('hidden');
     }
   }
 
@@ -485,61 +531,83 @@
   // [4] 비즈니스 로직 (API 호출)
   // ============================================================================
   
-  // 4-1. 고객 목록 조회 (검색 기능 복구)
+  // [JavaScript.html] fetchCustomers 함수 전체 교체 (정렬 로직 개선)
   async function fetchCustomers(isNew = false) {
-    if(isNew) {
-      currentOffset = 0;
-      const getSafeVal = (id) => { const el = document.getElementById(id); return el ? el.value : ''; };
-      currentFilters = {
-        searchTerm: getSafeVal('filterSearchTerm'),
-        dbType: getSafeVal('filterDbType'),
-        status: getSafeVal('filterCustomerStatus'),
-        dateFrom: getSafeVal('filterAssignmentDateFrom'),
-        dateTo: getSafeVal('filterAssignmentDateTo')
-      };
-    } else {
-      currentOffset += PAGE_SIZE;
-    }
-
-    showLoader();
-    try {
-      let query = supabase.from('customers').select('*', { count: 'exact' })
-        .range(currentOffset, currentOffset + PAGE_SIZE - 1)
-        .order('assignment_date', { ascending: false });
-
-      if (currentUserName) {
-        query = query.eq('assigned_to', currentUserName);
-      }
-
-      // ★ [복구 완료] 이름/번호 + 메모/관심차종까지 검색되도록 수정
-      if(currentFilters.searchTerm) {
-         const term = currentFilters.searchTerm;
-         // .or() 문법: 컬럼명.ilike.%검색어% 형태를 콤마로 연결
-         query = query.or(`customer_name.ilike.%${term}%,customer_phone.ilike.%${term}%,customer_memo.ilike.%${term}%,interested_car_model.ilike.%${term}%`);
-      }
-      
-      if(currentFilters.status) query = query.eq('customer_status', currentFilters.status);
-      if(currentFilters.dbType) query = query.eq('db_type', currentFilters.dbType);
-      if(currentFilters.dateFrom) query = query.gte('assignment_date', currentFilters.dateFrom);
-      if(currentFilters.dateTo) {
-        const d = new Date(currentFilters.dateTo); d.setDate(d.getDate()+1);
-        query = query.lt('assignment_date', d.toISOString());
-      }
-
-      const { data, count, error } = await query;
-      if(error) throw error;
-      
-      totalCustomerCount = count;
-      displayAssignedCustomers(data.map(toUiData), isNew);
-    } catch(e) {
-      handleFailure(e);
-    } finally {
-      hideLoader();
-    }
+  if(isNew) {
+    currentOffset = 0;
+    const getSafeVal = (id) => { const el = document.getElementById(id); return el ? el.value : ''; };
+    currentFilters = {
+      searchTerm: getSafeVal('filterSearchTerm'),
+      dbType: getSafeVal('filterDbType'),
+      status: getSafeVal('filterCustomerStatus'),
+      dateFrom: getSafeVal('filterAssignmentDateFrom'),
+      dateTo: getSafeVal('filterAssignmentDateTo')
+    };
+  } else {
+    currentOffset += PAGE_SIZE;
   }
 
+  showLoader();
+  try {
+    // ★ [핵심 수정] 정렬 옵션 설정
+    // '최근상담(last_log_date)'으로 정렬할 때는 값이 없는 사람(상담 안 함)을 무조건 맨 위로(nullsFirst: true)
+    // 그 외(배정일 등)는 기본값(false) 사용
+    const isLastLogSort = (currentSortColumn === 'last_log_date');
+    const nullsFirstOption = isLastLogSort ? true : false;
+
+    let query = supabase.from('customers').select('*', { count: 'exact' })
+      .range(currentOffset, currentOffset + PAGE_SIZE - 1)
+      .order(currentSortColumn, { ascending: currentSortAscending, nullsFirst: nullsFirstOption });
+
+    if (currentUserName) {
+      query = query.eq('assigned_to', currentUserName);
+    }
+
+    // 검색 로직
+    if(currentFilters.searchTerm) {
+       const term = currentFilters.searchTerm;
+       const cleanTerm = term.replace(/-/g, ''); 
+
+       const searchConditions = [
+          `customer_name.ilike.%${term}%`,
+          `customer_phone.ilike.%${cleanTerm}%`, 
+          `customer_phone.ilike.%${term}%`,
+          `customer_memo.ilike.%${term}%`,
+          `interested_car_model.ilike.%${term}%`
+       ].join(',');
+
+       query = query.or(searchConditions);
+    }
+    
+    if(currentFilters.status) query = query.eq('customer_status', currentFilters.status);
+    if(currentFilters.dbType) query = query.eq('db_type', currentFilters.dbType);
+    if(currentFilters.dateFrom) query = query.gte('assignment_date', currentFilters.dateFrom);
+    if(currentFilters.dateTo) {
+      const d = new Date(currentFilters.dateTo); d.setDate(d.getDate()+1);
+      query = query.lt('assignment_date', d.toISOString());
+    }
+
+    const { data, count, error } = await query;
+    if(error) throw error;
+    
+    totalCustomerCount = count;
+    displayAssignedCustomers(data.map(toUiData), isNew);
+  } catch(e) {
+    handleFailure(e);
+  } finally {
+    hideLoader();
+  }
+}
+
   // 4-2. 계약 목록 조회 (내 담당 고객의 계약만 필터링)
+  // [수정] 페이징 기능 추가
   async function fetchGlobalContracts(isNew = false) {
+    if (isNew) {
+      currentContractOffset = 0; // 전역 변수 초기화 필요
+    } else {
+      currentContractOffset += PAGE_SIZE;
+    }
+
     showLoader();
     try {
       // ★ [핵심 수정] 
@@ -570,17 +638,23 @@
       
       if (dateEl && dateEl.value) query = query.gte('contract_date', dateEl.value);
 
-      const { data, error } = await query;
+      const { data, count, error } = await query; // count도 받음
       if (error) throw error;
 
-      renderGlobalContracts(data);
+      // isNew 여부에 따라 덮어쓰거나 이어붙이기
+      if (isNew) {
+          renderGlobalContracts(data, true); // true 플래그 전달 (render 함수 수정 필요)
+      } else {
+          renderGlobalContracts(data, false);
+      }
+      
+      // (선택 사항) '더보기' 버튼 로직을 계약 탭에도 추가할 수 있습니다.
     } catch (e) {
       handleFailure(e);
     } finally {
       hideLoader();
     }
-  }
-
+}
   async function selectCustomer(id) {
     showLoader();
     try {
@@ -600,8 +674,16 @@
         .order('contract_date', {ascending:false});
       if(e3) throw e3;
 
+      // ★ [화면 전환 로직 수정] 
+      // 기존에 켜져 있을 수 있는 모든 패널을 확실하게 숨겨야 합니다.
       document.getElementById('listPanel').classList.add('hidden');
       if(document.getElementById('contractListPanel')) document.getElementById('contractListPanel').classList.add('hidden');
+      
+      // [추가] 계약 상세 패널도 숨김 처리
+      const contractPanel = document.getElementById('contractDetailPanel');
+      if(contractPanel) contractPanel.classList.add('hidden');
+
+      // 고객 상세 패널만 표시
       document.getElementById('customerDetailPanel').classList.remove('hidden');
 
       displayAssignmentDetails({ assignment: toUiData(cust) });
@@ -701,7 +783,7 @@
   // ============================================================================
   function setupGlobalEventListeners() {
     
-    // ★ 탭 버튼 리스너 추가
+    // 탭 버튼 리스너
     const tabCustomerBtn = document.getElementById('tabCustomerBtn');
     const tabContractBtn = document.getElementById('tabContractBtn');
     
@@ -712,12 +794,13 @@
         tabContractBtn.addEventListener('click', () => switchTab('contract'));
     }
     
-    // ★ 계약 검색 버튼
+    // 계약 검색 버튼
     const searchContractBtn = document.getElementById('searchContractBtn');
     if(searchContractBtn) {
         searchContractBtn.addEventListener('click', () => fetchGlobalContracts(true));
     }
 
+    // 구글 로그인 버튼
     const loginBtn = document.getElementById('googleLoginBtn');
     if(loginBtn) {
       loginBtn.addEventListener('click', async () => {
@@ -735,7 +818,7 @@
       });
     }
     
-    // [추가] 로그아웃 버튼 이벤트
+    // 로그아웃 버튼
     const logoutBtn = document.getElementById('logoutBtn');
     if (logoutBtn) {
       logoutBtn.addEventListener('click', async () => {
@@ -743,13 +826,13 @@
         if (error) {
           alert("로그아웃 실패: " + error.message);
         } else {
-          // 로그아웃 성공 시 페이지 새로고침 (또는 로그인 모달 표시)
           alert("로그아웃 되었습니다.");
           window.location.reload(); 
         }
       });
     }
 
+    // 필터 관련 버튼
     document.getElementById('applyFilterBtn').addEventListener('click', () => fetchCustomers(true));
     document.getElementById('loadMoreBtn').addEventListener('click', () => fetchCustomers(false));
     document.getElementById('resetFilterBtn').addEventListener('click', () => {
@@ -757,30 +840,24 @@
         setVal('filterSearchTerm', '');
         setVal('filterDbType', '');
         setVal('filterCustomerStatus', '');
-        setVal('filterAssignmentDateFrom', ''); // 날짜도 초기화 (전체 보기)
+        setVal('filterAssignmentDateFrom', ''); 
         setVal('filterAssignmentDateTo', '');
-        
         fetchCustomers(true);
     });
 
-    // ★ [핵심 수정] 고객 상세 -> 뒤로가기 버튼
+    // 뒤로가기 버튼 (고객 상세 -> 목록)
     document.getElementById('backToListBtn').addEventListener('click', (e) => {
       e.preventDefault();
-      
-      // 현재 보고 있는 고객 상세 패널 닫기
       document.getElementById('customerDetailPanel').classList.add('hidden');
       
-      // '어디서 왔는지' 확인하여 해당 화면 복구
       if (window.customerDetailSource === 'contractDetailPanel') {
-          // 계약 상세 화면에서 왔으면 거기로 복귀
           document.getElementById('contractDetailPanel').classList.remove('hidden');
       } else {
-          // 기본값: 고객 목록으로 복귀 (리스트에서 왔거나 불분명할 때)
           document.getElementById('listPanel').classList.remove('hidden');
       }
     });
 
-    // ★ 안전한 getVal 함수
+    // 유틸리티: 값 가져오기
     const getVal = (id) => {
         const el = document.getElementById(id);
         return el ? el.value : ''; 
@@ -796,9 +873,7 @@
         });
     }
 
-    // 계약 상세 화면 -> 고객 정보 보러가기
-   
-
+    // 고객 정보 저장 버튼
     document.getElementById('saveCustomerDetailsBtn').addEventListener('click', async (e) => {
       if(!currentAssignmentId) return;
       
@@ -807,7 +882,6 @@
         gender: getVal('gender'),
         age_group: getVal('ageGroup'),
         address_city: getVal('addressCity'),
-        // address_district 삭제됨
         income_type: getVal('incomeType'),
         credit_info: getVal('creditInfo'),
         interested_car_model: getVal('interestedCarModel'),
@@ -838,46 +912,79 @@
       else showSaveFeedback(e.target);
     });
 
+    // ★ [수정됨] 상담 로그 추가 (고객 테이블 날짜 갱신 로직 포함)
     document.getElementById('addLogBtn').addEventListener('click', async () => {
       if(!currentAssignmentId) return;
       const txt = document.getElementById('newLogContent').value.trim();
       if(!txt) return alert('내용을 입력하세요');
       
       showLoader();
+      const nowISO = new Date().toISOString(); 
+
+      // 1. 상담 로그 추가
       const newLog = {
         log_id: 'LOG_' + Date.now(),
         assignment_id: currentAssignmentId,
         log_content: txt,
         user_name: currentUserName,
-        log_timestamp: new Date().toISOString()
+        log_timestamp: nowISO
       };
-      const { error } = await supabase.from('consultation_logs').insert([newLog]);
-      if(error) {
-        handleFailure(error);
-      } else {
-        document.getElementById('newLogContent').value = '';
-        selectCustomer(currentAssignmentId);
+      
+      const { error: logError } = await supabase.from('consultation_logs').insert([newLog]);
+
+      if(logError) {
+        handleFailure(logError);
+        return; // 로그 실패 시 중단
+      } 
+
+      // 2. 고객 테이블의 last_log_date 갱신
+      const { error: custError } = await supabase
+        .from('customers')
+        .update({ 
+            last_log_date: nowISO,     
+            updated_at: nowISO         
+        })
+        .eq('assignment_id', currentAssignmentId);
+
+      if (custError) {
+          console.warn("로그는 저장되었으나 고객 날짜 갱신 실패:", custError);
       }
+
+      // 3. UI 갱신 및 초기화
+      hideLoader();
+      document.getElementById('newLogContent').value = '';
+      selectCustomer(currentAssignmentId); // 상세 화면 리로드
     });
 
+    // 전화번호 수정 (숫자만 저장)
     document.getElementById('savePhoneNumberBtn').addEventListener('click', async(e) => {
-        if(!currentAssignmentId) return;
-        const ph = document.getElementById('detailCustomerPhoneNumber').value;
-        showLoader();
-        const { error } = await supabase.from('customers').update({customer_phone: formatPhoneNumber_Client(ph)}).eq('assignment_id', currentAssignmentId);
-        hideLoader();
-        if(error) handleFailure(error);
-        else showSaveFeedback(e.target);
+      if(!currentAssignmentId) return;
+      const ph = document.getElementById('detailCustomerPhoneNumber').value;
+      const rawPhone = ph.replace(/\D/g, "");
+      
+      showLoader();
+      const { error } = await supabase.from('customers').update({
+          customer_phone: rawPhone 
+      }).eq('assignment_id', currentAssignmentId);
+      
+      hideLoader();
+      if(error) handleFailure(error);
+      else showSaveFeedback(e.target);
     });
 
+    // 신규 고객 모달 관련
     document.getElementById('openAddCustomerModalBtn').addEventListener('click', () => document.getElementById('addCustomerModal').classList.remove('hidden'));
     document.getElementById('cancelAddCustomerBtn').addEventListener('click', () => document.getElementById('addCustomerModal').classList.add('hidden'));
     
+    // 신규 고객 저장
     document.getElementById('saveNewCustomerBtn').addEventListener('click', async () => {
       const name = document.getElementById('newCustomerName').value;
-      const phone = document.getElementById('newCustomerPhoneNumber').value;
+      let phone = document.getElementById('newCustomerPhoneNumber').value;
       const dbType = document.getElementById('newDbType').value;
+      
       if(!name) return alert('이름 필수');
+
+      phone = phone.replace(/\D/g, ""); 
 
       showLoader();
       const ts = Date.now();
@@ -900,6 +1007,7 @@
       }
     });
 
+    // 신규 계약 모달 관련
     document.getElementById('openAddContractModalBtn').addEventListener('click', () => {
         if(!currentAssignmentId) return;
         document.getElementById('addContractModal').classList.remove('hidden');
@@ -916,6 +1024,7 @@
         else form.classList.add('hidden');
     });
 
+    // 신규 계약 저장
     document.getElementById('saveNewContractBtn').addEventListener('click', async () => {
         const date = document.getElementById('modalContractDate').value;
         const car = document.getElementById('modalContractCarModel').value;
@@ -937,24 +1046,50 @@
 
             if (isProxy) {
                 relationshipVal = relation;
+                
+                // 메모 문구 생성 (기존 로직 유지)
+                let memoSuffix = "소개건"; 
+                if (relation !== '지인/소개') {
+                    memoSuffix = "타인명의 진행건"; 
+                }
+                const autoMemo = `[자동생성] ${document.getElementById('detailCustomerNameText').textContent}님의 ${memoSuffix}`;
+
                 // 실계약자 존재 여부 확인
                 const { data: existUser } = await supabase.from('customers').select('assignment_id').eq('customer_phone', realPhone).maybeSingle();
                 
                 if (existUser) {
+                    // 이미 존재하는 고객이면 ID만 가져다 씀
+                    // (선택 사항: 기존 고객이라도 이번에 계약했으니 시간을 갱신해주고 싶다면 update를 여기서 칠 수도 있습니다)
                     targetAssignmentId = existUser.assignment_id;
                     actualContractorId = existUser.assignment_id;
+                    
+                    // ★ (추가 추천) 기존 고객이라도 '최근 활동'을 갱신해주는 것이 좋습니다.
+                    await supabase.from('customers').update({
+                        last_log_date: new Date().toISOString(),
+                        updated_at: new Date().toISOString()
+                    }).eq('assignment_id', existUser.assignment_id);
+
                 } else {
+                    // [신규 생성] 이 부분이 핵심입니다.
                     const ts = Date.now();
                     const newId = "A_" + ts;
+                    const nowISO = new Date().toISOString(); // 현재 시간 생성
+
                     await supabase.from('customers').insert([{
                         assignment_id: newId,
                         customer_id: "C_" + ts,
                         customer_name: realName,
                         customer_phone: realPhone,
                         assigned_to: currentUserName,
-                        customer_status: '계약 완료',
-                        lead_source: '지인/소개',
-                        customer_memo: `[자동생성] ${document.getElementById('detailCustomerNameText').textContent}님의 소개건`
+                        owner_email: currentUserEmail,
+                        customer_status: '계약 완료',     // 상태도 '계약 완료'로 시작
+                        lead_source: relationshipVal,
+                        customer_memo: autoMemo,
+                        
+                        // ★ [핵심 수정] 생성과 동시에 '마지막 상담일'을 현재로 채워줍니다.
+                        // 계약 생성 자체가 가장 강력한 '상담/영업 활동'이기 때문입니다.
+                        last_log_date: nowISO,
+                        updated_at: nowISO
                     }]);
                     targetAssignmentId = newId;
                     actualContractorId = newId;
@@ -986,29 +1121,87 @@
             handleFailure(e);
         }
     });
-
-    // 이벤트 리스너에서 addressCity change 이벤트 삭제됨
     
     document.getElementById('newCustomerPhoneNumber').addEventListener('blur', (e) => {
       e.target.value = formatPhoneNumber_Client(e.target.value);
     });
 
-    // ★ [추가] 계약 상세 화면 -> '해당 고객 상세 정보 보러가기' 버튼 클릭 이벤트
+    // ★ [추가] 계약 상세 -> 해당 고객 상세 (단일 버튼)
     const goToCustBtn = document.getElementById('goToCustomerDetailBtn');
     if (goToCustBtn) {
         goToCustBtn.addEventListener('click', () => {
-             // 1. 현재 보고 있는 계약에 연결된 고객 ID가 있는지 확인
              if (currentViewingContract && currentViewingContract.assignment_id) {
-                 
-                 // ★ [핵심] "나는 계약 상세 화면(contractDetailPanel)에서 넘어왔어" 라고 출처를 기록
                  window.customerDetailSource = 'contractDetailPanel';
-
-                 // 2. 고객 상세 정보 불러오기 (화면 전환은 이 함수 안에서 처리됨)
                  selectCustomer(currentViewingContract.assignment_id);
-                 
              } else {
                  alert("이 계약에 연결된 고객 정보를 찾을 수 없습니다.");
              }
         });
     }
+
+    // ★ [신규] 실계약자 정보 보러가기
+    const goToContractorBtn = document.getElementById('goToContractorBtn');
+    if(goToContractorBtn) {
+        goToContractorBtn.addEventListener('click', () => {
+            if (currentViewingContract && currentViewingContract.assignment_id) {
+                window.customerDetailSource = 'contractDetailPanel';
+                selectCustomer(currentViewingContract.assignment_id);
+            } else {
+                alert("연결된 실계약자 정보가 없습니다.");
+            }
+        });
+    }
+
+    // ★ [신규] 상담 고객 정보 보러가기
+    const goToConsultantBtn = document.getElementById('goToConsultantBtn');
+    if(goToConsultantBtn) {
+        goToConsultantBtn.addEventListener('click', () => {
+            if (currentViewingContract && currentViewingContract.consultant_id) {
+                window.customerDetailSource = 'contractDetailPanel';
+                selectCustomer(currentViewingContract.consultant_id);
+            } else {
+                alert("연결된 상담 고객 정보가 없습니다.");
+            }
+        });
+    }
+
+    // 정렬 처리 헬퍼 함수
+    const handleSort = (column, iconId) => {
+    // 1. 같은 컬럼을 또 클릭했으면 정렬 순서 반전, 아니면 내림차순(최신순)으로 초기화
+    if (currentSortColumn === column) {
+        currentSortAscending = !currentSortAscending;
+    } else {
+        currentSortColumn = column;
+        currentSortAscending = false; // 새 항목 클릭 시 보통 최신순(내림차순)부터 보여줌
+    }
+
+    // 2. 아이콘 업데이트 (시각적 피드백)
+    document.getElementById('sortIconLastLog').textContent = '';
+    document.getElementById('sortIconAssignmentDate').textContent = '';
+    
+    const iconChar = currentSortAscending ? '▲' : '▼';
+    document.getElementById(iconId).textContent = iconChar;
+
+    // 3. 데이터 다시 불러오기 (첫 페이지부터)
+    fetchCustomers(true);
+    };
+
+    // '최근상담' 헤더 클릭 이벤트
+    const btnLastLog = document.getElementById('sortLastLogBtn');
+    if (btnLastLog) {
+        btnLastLog.addEventListener('click', () => {
+            // DB 컬럼명: last_log_date
+            handleSort('last_log_date', 'sortIconLastLog');
+        });
+    }
+
+    // '배정일' 헤더 클릭 이벤트
+    const btnAssignDate = document.getElementById('sortAssignmentDateBtn');
+    if (btnAssignDate) {
+        btnAssignDate.addEventListener('click', () => {
+            // DB 컬럼명: assignment_date
+            handleSort('assignment_date', 'sortIconAssignmentDate');
+        });
+    }
+
   }
