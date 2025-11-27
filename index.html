@@ -249,8 +249,18 @@
           </div>
         </div>
         <div class="list-header-row">
-           <span class="col-db">DB유형</span><span class="col-status">상태</span><span class="col-name">고객명</span><span class="col-phone">연락처</span>
-           <span class="col-memo">메모/관심차종</span><span class="col-last">최근상담</span><span class="col-date">배정일</span>
+          <span class="col-db">DB유형</span>
+          <span class="col-status">상태</span>
+          <span class="col-name">고객명</span>
+          <span class="col-phone">연락처</span>
+          <span class="col-memo">메모/관심차종</span>
+          
+          <span class="col-last" id="sortLastLogBtn" style="cursor:pointer; user-select:none;">
+            최근상담 <span id="sortIconLastLog">▼</span>
+          </span>
+          <span class="col-date" id="sortAssignmentDateBtn" style="cursor:pointer; user-select:none;">
+            배정일 <span id="sortIconAssignmentDate"></span>
+          </span>
         </div>
         <ul id="assignedCustomersList" style="flex:1; overflow-y:auto; margin:0; padding:0; list-style:none;">
            <li style="padding:20px; text-align:center; color:#999;">로딩 중...</li>
@@ -308,7 +318,18 @@
             <h4>📝 특이사항 / 메모</h4>
             <div id="viewContSummary" style="background:#f9f9f9; padding:15px; border-radius:4px; min-height:60px; white-space: pre-wrap; color:#444;"></div>
           </div>
-          <button id="goToCustomerDetailBtn" class="btn-link-customer">해당 고객 상세 정보 보러가기 &rarr;</button>
+          <div id="singleButtonArea">
+            <button id="goToCustomerDetailBtn" class="btn-link-customer">해당 고객 상세 정보 보러가기 &rarr;</button>
+          </div>
+
+          <div id="dualButtonArea" class="hidden" style="display:flex; gap:10px; margin-top:20px;">
+            <button id="goToContractorBtn" class="btn-link-customer" style="flex:1; background-color:#6c757d;">
+              📑 실계약자 정보 &rarr;
+            </button>
+            <button id="goToConsultantBtn" class="btn-link-customer" style="flex:1;">
+              👤 상담 고객 정보 &rarr;
+            </button>
+          </div>
         </div>
       </div>
     </div>
