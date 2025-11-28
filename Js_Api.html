@@ -1,0 +1,433 @@
+
+  // ============================================================================
+  // [4] 비즈니스 로직 (API 호출 및 데이터 관리)
+  // ============================================================================
+
+  // ----------------------------------------------------------------------------
+  // 4-1. 고객 목록 조회 (필터 및 정렬 적용)
+  // ----------------------------------------------------------------------------
+  async function fetchCustomers(isNew = false) {
+    if(isNew) {
+      currentOffset = 0;
+      const getSafeVal = (id) => { const el = document.getElementById(id); return el ? el.value : ''; };
+      currentFilters = {
+        searchTerm: getSafeVal('filterSearchTerm'),
+        dbType: getSafeVal('filterDbType'),
+        status: getSafeVal('filterCustomerStatus'),
+        dateFrom: getSafeVal('filterAssignmentDateFrom'),
+        dateTo: getSafeVal('filterAssignmentDateTo')
+      };
+    } else {
+      currentOffset += PAGE_SIZE;
+    }
+
+    showLoader();
+    try {
+      // 정렬 옵션 설정: '최근상담'일 경우 NULL 값을 맨 위로(할일 우선)
+      const isLastLogSort = (currentSortColumn === 'last_log_date');
+      const nullsFirstOption = isLastLogSort ? true : false;
+
+      let query = supabase.from('customers').select('*', { count: 'exact' })
+        .range(currentOffset, currentOffset + PAGE_SIZE - 1)
+        .order(currentSortColumn, { ascending: currentSortAscending, nullsFirst: nullsFirstOption });
+
+      if (currentUserName) {
+        query = query.eq('assigned_to', currentUserName);
+      }
+
+      // 검색 로직
+      if(currentFilters.searchTerm) {
+         const term = currentFilters.searchTerm;
+         const cleanTerm = term.replace(/-/g, ''); 
+
+         const searchConditions = [
+            `customer_name.ilike.%${term}%`,
+            `customer_phone.ilike.%${cleanTerm}%`, 
+            `customer_phone.ilike.%${term}%`,
+            `customer_memo.ilike.%${term}%`,
+            `interested_car_model.ilike.%${term}%`
+         ].join(',');
+
+         query = query.or(searchConditions);
+      }
+      
+      if(currentFilters.status) query = query.eq('customer_status', currentFilters.status);
+      if(currentFilters.dbType) query = query.eq('db_type', currentFilters.dbType);
+      if(currentFilters.dateFrom) query = query.gte('assignment_date', currentFilters.dateFrom);
+      if(currentFilters.dateTo) {
+        const d = new Date(currentFilters.dateTo); d.setDate(d.getDate()+1);
+        query = query.lt('assignment_date', d.toISOString());
+      }
+
+      const { data, count, error } = await query;
+      if(error) throw error;
+      
+      totalCustomerCount = count;
+      displayAssignedCustomers(data.map(toUiData), isNew);
+    } catch(e) {
+      handleFailure(e);
+    } finally {
+      hideLoader();
+    }
+  }
+
+  // ----------------------------------------------------------------------------
+  // 4-2. 계약 목록 조회 (전체 계약 탭)
+  // ----------------------------------------------------------------------------
+  async function fetchGlobalContracts(isNew = false) {
+    if (isNew) {
+      currentContractOffset = 0;
+    } else {
+      currentContractOffset += PAGE_SIZE;
+    }
+
+    showLoader();
+    try {
+      // 내 담당 고객의 계약만 필터링 (customers!inner 조인)
+      let query = supabase
+        .from('contracts')
+        .select('*, customers!inner(customer_name, customer_phone, assigned_to)')
+        .eq('customers.assigned_to', currentUserName)
+        .order('contract_date', { ascending: false });
+
+      // 필터 적용
+      const statusEl = document.getElementById('filterContractStatus');
+      const termEl = document.getElementById('contractSearchTerm');
+      const dateEl = document.getElementById('filterContractDateFrom');
+      
+      if (statusEl && statusEl.value) query = query.eq('contract_status', statusEl.value);
+      
+      if (termEl && termEl.value) {
+        query = query.ilike('contract_car_model', `%${termEl.value}%`);
+      }
+      
+      if (dateEl && dateEl.value) query = query.gte('contract_date', dateEl.value);
+
+      const { data, count, error } = await query; 
+      if (error) throw error;
+
+      if (isNew) {
+          renderGlobalContracts(data, true); 
+      } else {
+          renderGlobalContracts(data, false);
+      }
+    } catch (e) {
+      handleFailure(e);
+    } finally {
+      hideLoader();
+    }
+  }
+
+  // ----------------------------------------------------------------------------
+  // 4-3. 단일 고객 상세 조회 (상담 로그, 계약 이력 포함)
+  // ----------------------------------------------------------------------------
+  async function selectCustomer(id) {
+    showLoader();
+    try {
+      const { data: cust, error: e1 } = await supabase.from('customers').select('*').eq('assignment_id', id).maybeSingle();
+      
+      if (e1) throw e1;
+      if (!cust) throw new Error("삭제되었거나 존재하지 않는 고객입니다.");
+      
+      const { data: logs, error: e2 } = await supabase.from('consultation_logs').select('*').eq('assignment_id', id).order('log_timestamp', {ascending:false});
+      if(e2) throw e2;
+
+      const { data: contracts, error: e3 } = await supabase.from('contracts')
+        .select('*, customers(customer_name)') 
+        .or(`assignment_id.eq.${id},consultant_id.eq.${id}`)
+        .order('contract_date', {ascending:false});
+      if(e3) throw e3;
+
+      // 패널 제어
+      document.getElementById('listPanel').classList.add('hidden');
+      if(document.getElementById('contractListPanel')) document.getElementById('contractListPanel').classList.add('hidden');
+      const contractPanel = document.getElementById('contractDetailPanel');
+      if(contractPanel) contractPanel.classList.add('hidden');
+
+      document.getElementById('customerDetailPanel').classList.remove('hidden');
+
+      displayAssignmentDetails({ assignment: toUiData(cust) });
+      
+      renderLogs(logs.map(l => ({ 
+          logId: l.log_id, 
+          logTimestamp: l.log_timestamp, 
+          logContent: l.log_content,
+          userName: l.user_name 
+      })));
+      renderContracts(contracts);
+
+    } catch(e) {
+      handleFailure(e);
+    } finally {
+      hideLoader();
+    }
+  }
+
+  // ----------------------------------------------------------------------------
+  // 4-4. 상담 로그 관리 (삭제/수정)
+  // ----------------------------------------------------------------------------
+  async function deleteLog(logId) {
+    if (!confirm("정말 이 상담 기록을 삭제하시겠습니까?")) return;
+
+    showLoader();
+    const { error } = await supabase
+        .from('consultation_logs')
+        .delete()
+        .eq('log_id', logId);
+    
+    hideLoader();
+    if (error) {
+        alert("삭제 실패: " + error.message);
+    } else {
+        if(currentAssignmentId) selectCustomer(currentAssignmentId);
+    }
+  }
+
+  async function editLog(logId, btnElement) {
+    const contentDiv = document.getElementById(`content-${logId}`);
+    const currentContent = contentDiv.textContent;
+    const card = btnElement.closest('.log-entry-card');
+    const actionsDiv = btnElement.closest('.log-actions');
+    
+    if (card.querySelector('textarea')) return;
+
+    contentDiv.style.display = 'none';
+    actionsDiv.style.display = 'none';
+
+    const editorDiv = document.createElement('div');
+    editorDiv.innerHTML = `
+        <textarea style="width:100%; height:100px; margin:5px 0; border:1px solid #ccc; padding:5px;">${currentContent}</textarea>
+        <div style="text-align:right; gap:5px; display:flex; justify-content:flex-end;">
+            <button id="save-${logId}" style="padding:4px 10px; font-size:0.8rem;">저장</button>
+            <button id="cancel-${logId}" class="secondary" style="padding:4px 10px; font-size:0.8rem;">취소</button>
+        </div>
+    `;
+    card.appendChild(editorDiv);
+
+    document.getElementById(`save-${logId}`).onclick = async () => {
+        const newText = editorDiv.querySelector('textarea').value;
+        if (!newText.trim()) return alert("내용을 입력하세요.");
+
+        showLoader();
+        const { error } = await supabase
+            .from('consultation_logs')
+            .update({ log_content: newText }) 
+            .eq('log_id', logId);
+            
+        hideLoader();
+        if (error) {
+            alert("수정 실패: " + error.message);
+        } else {
+            if(currentAssignmentId) selectCustomer(currentAssignmentId);
+        }
+    };
+
+    document.getElementById(`cancel-${logId}`).onclick = () => {
+        editorDiv.remove();
+        contentDiv.style.display = 'block';
+        actionsDiv.style.display = 'flex';
+    };
+  }
+
+  // ----------------------------------------------------------------------------
+  // 4-5. Cloud Run AI 분석 (음성 파일 업로드)
+  // ----------------------------------------------------------------------------
+  const CLOUD_RUN_BASE_URL = "https://rental-analyzer-812042135518.asia-northeast3.run.app"; 
+
+  const btnAnalyze = document.getElementById('btnAnalyzeVoice');
+  const fileInput = document.getElementById('voiceFileInput');
+
+  // HTML 요소가 로드된 후 이벤트 바인딩 (DOM이 존재할 때만)
+  if (btnAnalyze && fileInput) {
+    btnAnalyze.addEventListener('click', () => {
+      fileInput.value = ''; 
+      fileInput.click();
+    });
+
+    fileInput.addEventListener('change', async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      if (!confirm(`'${file.name}' 분석을 시작하시겠습니까?\n`)) return;
+
+      showLoader(); 
+      
+      try {
+        const fileId = `upload_${Date.now()}_${Math.floor(Math.random()*1000)}`;
+        const CHUNK_SIZE = 10 * 1024 * 1024; 
+        const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+        
+        // 1. 청크 업로드
+        for (let i = 0; i < totalChunks; i++) {
+            const start = i * CHUNK_SIZE;
+            const end = Math.min(file.size, start + CHUNK_SIZE);
+            const chunk = file.slice(start, end);
+            
+            const percent = Math.round(((i) / totalChunks) * 100);
+            setStatusMessage(`📡 전송 중... ${percent}% (${i+1}/${totalChunks})`);
+
+            const formData = new FormData();
+            formData.append("file", chunk);
+            formData.append("file_id", fileId);
+            formData.append("chunk_index", i);
+
+            const res = await fetch(`${CLOUD_RUN_BASE_URL}/upload-chunk`, {
+                method: "POST",
+                body: formData
+            });
+            
+            if (!res.ok) throw new Error(`Chunk ${i} upload failed`);
+        }
+
+        // 2. 합체 및 분석 요청
+        setStatusMessage("🤖 AI 분석 중... (잠시만 기다려주세요)");
+        
+        let mimeType = file.type;
+        if (!mimeType && file.name.toLowerCase().endsWith('.m4a')) mimeType = 'audio/mp4';
+        if (!mimeType) mimeType = 'audio/mp3';
+
+        const finalForm = new FormData();
+        finalForm.append("file_id", fileId);
+        finalForm.append("total_chunks", totalChunks);
+        finalForm.append("file_name", file.name);
+        finalForm.append("mime_type", mimeType);
+
+        const analyzeRes = await fetch(`${CLOUD_RUN_BASE_URL}/analyze-chunked`, {
+            method: "POST",
+            body: finalForm
+        });
+
+        const result = await analyzeRes.json();
+        if (!result.success) throw new Error(result.error);
+        
+        onAnalysisSuccess({ success: true, data: result.data });
+
+      } catch (err) {
+        alert("❌ 오류 발생: " + err.message);
+        console.error(err);
+      } finally {
+        hideLoader();
+      }
+    });
+  }
+
+  // AI 분석 성공 시 데이터 채우기 (Smart Fill)
+  function onAnalysisSuccess(response) {
+    hideLoader();
+
+    if (!response.success) {
+      alert("❌ 분석 실패:\n" + response.error);
+      return;
+    }
+
+    let data = response.data;
+    if (Array.isArray(data)) data = data[0];
+    
+    if (!data || Object.keys(data).length === 0) {
+        alert("⚠️ 분석은 성공했으나 데이터가 비어있습니다.");
+        return;
+    }
+
+    alert("✅ 분석이 완료되었습니다.\n내용을 확인해주세요.");
+
+    const smartFill = (id, newVal) => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      if (newVal === undefined || newVal === null || String(newVal).trim() === "") return;
+
+      const currentVal = el.value.trim();
+      const isPlaceholder = currentVal === '' || currentVal.includes('확인') || currentVal.includes('미정') || currentVal.includes('추정');
+      if (!isPlaceholder) return; 
+
+      const normalizeStr = (str) => String(str).normalize("NFC").replace(/\s+/g, '').toLowerCase();
+      const cleanNewVal = normalizeStr(newVal);
+
+      if (el.tagName.toUpperCase() === 'SELECT') {
+          let bestMatch = "";
+          for (let i = 0; i < el.options.length; i++) {
+              const optVal = el.options[i].value;
+              const optText = el.options[i].text;
+              const cleanOptVal = normalizeStr(optVal);
+              const cleanOptText = normalizeStr(optText);
+
+              if (cleanOptVal === cleanNewVal || cleanOptText === cleanNewVal ||
+                 (cleanOptVal.length > 0 && cleanNewVal.includes(cleanOptVal)) || 
+                 (cleanOptText.length > 0 && cleanNewVal.includes(cleanOptText))) {
+                  bestMatch = optVal;
+                  break;
+              }
+          }
+          
+          if (bestMatch) {
+              el.value = bestMatch; 
+          } else {
+              // 매칭 실패 시 강제 추가 옵션 (선택사항)
+              let optExists = false;
+              for(let j=0; j<el.options.length; j++) {
+                  if(el.options[j].value == newVal) { optExists = true; break; }
+              }
+              if (!optExists) {
+                  const newOpt = document.createElement('option');
+                  newOpt.value = newVal;
+                  newOpt.text = newVal; 
+                  newOpt.style.color = "blue"; 
+                  el.add(newOpt);
+              }
+              el.value = newVal;
+          }
+          highlight(el);
+
+      } else {
+          el.value = newVal;
+          highlight(el);
+      }
+    };
+
+    const highlight = (el) => {
+        el.style.backgroundColor = "#d1e7dd"; 
+        setTimeout(() => el.style.backgroundColor = "", 3000);
+    };
+
+    // 데이터 매핑
+    smartFill('customerType', data.customer_type);
+    smartFill('gender', data.gender);
+    smartFill('ageGroup', data.age_group);
+    smartFill('addressCity', data.address_city);
+    smartFill('incomeType', data.income_type);
+    smartFill('creditInfo', data.credit_info);
+    smartFill('occupation', data.occupation);
+    
+    smartFill('interestedCarModel', data.interested_car_model);
+    smartFill('comparisonCarModel', data.comparison_car_model);
+    smartFill('ownedCarModel', data.owned_car_model);
+    smartFill('carUsage', data.car_usage);
+    smartFill('drivingDistance', data.driving_distance);
+    smartFill('driverScope', data.driver_scope);
+    smartFill('expectedContractTiming', data.expected_contract_timing);
+    smartFill('desiredContractTerm', data.desired_contract_term);
+    smartFill('desiredInitialCostType', data.desired_initial_cost_type);
+    smartFill('maintenanceServiceLevel', data.maintenance_service_level);
+
+    if (data.customer_phone) {
+        const formatted = typeof formatPhoneNumber_Client === 'function' ? formatPhoneNumber_Client(data.customer_phone) : data.customer_phone;
+        smartFill('detailCustomerPhoneNumber', formatted);
+    }
+
+    const memoEl = document.getElementById('customerMemo');
+    if (memoEl && data.summary) {
+      const currentMemo = memoEl.value;
+      if (!currentMemo.includes(data.summary)) {
+          const prefix = currentMemo ? " | " : "";
+          memoEl.value += prefix + "[AI요약] " + data.summary;
+          highlight(memoEl);
+      }
+    }
+
+    const logEl = document.getElementById('newLogContent');
+    if (logEl && data.summary) {
+      logEl.value = `[🎙️ 녹음 분석 결과]\n\n📄 핵심요약:\n${data.summary}\n\n📝 상세내용:\n${data.details || '(내용 없음)'}`;
+      highlight(logEl);
+      const addLogBtn = document.getElementById('addLogBtn');
+      if(addLogBtn) addLogBtn.focus();
+    }
+  }
