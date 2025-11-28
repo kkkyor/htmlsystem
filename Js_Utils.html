@@ -1,0 +1,54 @@
+// ============================================================================
+// [2] UI 및 유틸리티 함수
+// ============================================================================
+function showLoader() { if(loader) loader.classList.remove('hidden'); }
+function hideLoader() { if(loader) loader.classList.add('hidden'); }
+
+function escapeHtml(text) {
+  if (text === null || text === undefined) return '';
+  return String(text).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+}
+
+function formatPhoneNumber_Client(phone) {
+  if (!phone) return "";
+  const digits = phone.replace(/\D/g, "");
+  if (digits.length === 11) return `${digits.substring(0, 3)}-${digits.substring(3, 7)}-${digits.substring(7)}`;
+  if (digits.length === 10) return `${digits.substring(0, 3)}-${digits.substring(3, 6)}-${digits.substring(6)}`;
+  return phone;
+}
+
+function formatDate(isoString) {
+  if (!isoString) return '';
+  try {
+    return isoString.split('T')[0];
+  } catch (e) {
+    return isoString;
+  }
+} 
+
+function showErrorModal(message) { alert(message); }
+
+function handleFailure(error) {
+  hideLoader();
+  console.error(error);
+  alert(`오류 발생: ${error.message || error}`);
+}
+
+function showSaveFeedback(btn) {
+  const origin = btn.textContent;
+  btn.textContent = "✅ 저장됨";
+  btn.disabled = true;
+  setTimeout(() => { btn.textContent = origin; btn.disabled = false; }, 1500);
+}
+
+function getStatusClass(status) {
+  if (status === '상담 완료') return 'completed';
+  if (status === '상담 진행 중' || status === '연락 시도 중') return 'consulting';
+  return '';
+}
+
+// [헬퍼] 로딩 메시지 변경 (loader 내부에 텍스트가 있다면)
+function setStatusMessage(msg) {
+  const loaderText = document.querySelector('#loader p');
+  if(loaderText) loaderText.textContent = msg;
+}
