@@ -1,0 +1,22 @@
+<script>
+  function crmApp() {
+    return {
+      currentTab: 'customer',
+      customers: [],
+      
+      init() {
+        console.log("Alpine App Initialized");
+        this.fetchCustomers();
+      },
+
+      async fetchCustomers() {
+        // 기존 supabase 호출 로직을 여기에 작성
+        // this.customers = data; 로 데이터 바인딩 (UI 자동 갱신)
+      },
+      
+      selectCustomer(id) {
+        // 상세 조회 로직
+      }
+    }
+  }
+</script>
