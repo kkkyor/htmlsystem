@@ -1,0 +1,51 @@
+
+  // ============================================================================
+  // [1] Supabase 설정 및 전역 변수
+  // ============================================================================
+  const SUPABASE_URL = 'https://chooqydalmudfaprrevg.supabase.co';
+  const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNob29xeWRhbG11ZGZhcHJyZXZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjM2NzM1MDUsImV4cCI6MjA3OTI0OTUwNX0.kgqtg9UXE-PNrgTSSCHcj9bgI0PYPmVPGV4jOF9_beI';
+
+  const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+  let session = null;
+  let currentUserEmail = null;
+  let currentUserName = "사용자";
+
+  let currentSortColumn = 'assignment_date'; // 기본 정렬 기준
+  let currentSortAscending = false;          // 기본: 내림차순 (최신순)
+  
+  // 고객 목록용 변수
+  let currentAssignmentId = null;
+  let currentFilters = {};
+  let currentOffset = 0;
+  let totalCustomerCount = 0;
+  
+  // 계약 목록용 변수
+  let currentContractOffset = 0;
+  const PAGE_SIZE = 30;
+
+  const CONFIG = {
+    selectOptions: {
+      leadSource: ['홈페이지', '네이버검색', '다음검색', '구글검색', 'SNS 광고', '유튜브 광고', '소개', '기존고객 재렌트', '파트너사 전달', '오프라인 광고', '기타'],
+      ageGroup: ['20대(만21~25)', '20대(만26~)', '30대', '40대', '50대', '60대 이상', '미확인'],
+      incomeType: ['4대보험 직장인', '4대보험 제외 직장인', '전문직', '프리랜서', '일용직', '무직/학생', '미확인'],
+      creditInfo: ['1~3 등급(상)', '4~6 등급(중)', '7~9 등급(하)', '심사 불가', '심사 전', '미확인'],
+      carUsage: ['출퇴근용', '업무용(영업/출장)', '레저/패밀리용', '법인 임원용', '개인 사업장 운영', '기타', '미확인'],
+      drivingDistance: ['1만km', '1.5만km', '2만km', '2.5만km', '3만km', '3.5만km', '4만km', '4.5만km', '5만km', '5만km 이상', '미정'],
+      expectedContractTiming: ['즉시(1개월 내)', '3개월 내', '6개월 내', '미정'],
+      desiredContractTerm: ['12개월', '24개월', '36개월', '48개월', '60개월', '미정'],
+      desiredInitialCostType: ['무보증', '보증금', '선납금', '보증증권', '미정'],
+      maintenanceServiceLevel: ['미포함(Self)', '포함(기본)', '포함(고급)', '미정'],
+      customerStatus: ['배정됨', '연락 시도 중', '상담 진행 중', '견적 발송', '추가 정보 요청', '가망 고객', '심사 진행중', '심사 완료', '계약 진행중', '계약 완료', '출고 완료', '기존 고객', '상담 보류', '상담 이탈'],
+      addressCities: ['서울특별시', '부산광역시', '대구광역시', '인천광역시', '광주광역시', '대전광역시', '울산광역시', '세종특별자치시', '경기도', '강원특별자치도', '충청북도', '충청남도', '전북특별자치도', '전라남도', '경상북도', '경상남도', '제주특별자치도']
+    }
+  };
+
+    let currentDataTimestamp = null;  
+
+      let currentViewingContract = null; // 현재 보고 있는 계약 데이터 임시 저장
+
+    // [수정] 계약 상세 보기 (진입 경로 처리 추가)
+    // source: 'contract_list' (기본값) 또는 'customer_detail'
+    let currentContractSource = 'contract_list'; 
+
