@@ -1,4 +1,3 @@
-// Code.gs
 
 // -----------------------------------------------------------------
 // [메인 함수] 웹 앱 접속 시 HTML 페이지를 반환
@@ -21,4 +20,10 @@ function doGet(e) {
       .setTitle('고객 상담일지 기록시스템')
       .addMetaTag('viewport', 'width=device-width, initial-scale=1.0')
       .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+}
+
+
+function include(filename) {
+  // TemplateFromFile은 내용을 '있는 그대로의 텍스트'로 가져옴 (성공)
+  return HtmlService.createTemplateFromFile(filename).getRawContent();
 }
