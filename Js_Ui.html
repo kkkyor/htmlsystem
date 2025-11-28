@@ -1,0 +1,790 @@
+
+  // ============================================================================
+  // [3] 데이터 변환 및 UI 렌더링
+  // ============================================================================
+  
+  // (중복 변수 선언 제거됨: currentContractSource 등은 Js_Config에 이미 있음)
+
+  function toUiData(dbData) {
+    if (!dbData) return null;
+    return {
+      assignmentId: dbData.assignment_id,
+      customerName: dbData.customer_name,
+      customerPhoneNumber: dbData.customer_phone,
+      assignedTo: dbData.assigned_to,
+      dbType: dbData.db_type,
+      assignmentDate: dbData.assignment_date,
+      customerStatus: dbData.customer_status,
+      // 상세 정보들
+      leadSource: dbData.lead_source,
+      customerType: dbData.customer_type,
+      gender: dbData.gender,
+      ageGroup: dbData.age_group,
+      addressCity: dbData.address_city,
+      incomeType: dbData.income_type,
+      creditInfo: dbData.credit_info,
+      interestedCarModel: dbData.interested_car_model,
+      comparisonCarModel: dbData.comparison_car_model,
+      ownedCarModel: dbData.owned_car_model,
+      carUsage: dbData.car_usage,
+      driverScope: dbData.driver_scope,
+      driving_distance: dbData.driving_distance,
+      expectedContractTiming: dbData.expected_contract_timing,
+      desiredContractTerm: dbData.desired_contract_term,
+      desiredInitialCostType: dbData.desired_initial_cost_type,
+      maintenanceServiceLevel: dbData.maintenance_service_level,
+      salesCondition: dbData.sales_condition,
+      isRepurchase: dbData.is_repurchase,
+      paymentMethod: dbData.payment_method,
+      customerMemo: dbData.customer_memo,
+      quoteNumber: dbData.quote_number,
+      approvalNumber: dbData.approval_number,
+      occupation: dbData.occupation,
+      lastLogDate: dbData.last_log_date,
+      // ★ 중요: 낙관적 락을 위한 수정일자 매핑
+      updatedAt: dbData.updated_at 
+    };
+  }
+
+  async function populateSelectOptions() {
+    const { data: dbTypeData } = await supabase.from('db_types').select('type_name').eq('is_active', true).order('sort_order', { ascending: true });
+    let dbTypes = dbTypeData ? dbTypeData.map(i => i.type_name) : ['기타'];
+    
+    const populate = (id, opts) => {
+      const el = document.getElementById(id);
+      if (!el || el.tagName !== 'SELECT') return;
+      const first = el.options[0]; el.innerHTML = ''; if (first) el.appendChild(first);
+      opts.forEach(v => { const op = document.createElement('option'); op.value = v; op.textContent = v; el.appendChild(op); });
+    };
+
+    populate('filterDbType', dbTypes);
+    populate('newDbType', dbTypes);
+
+    const opts = CONFIG.selectOptions;
+    populate('leadSource', opts.leadSource);
+    populate('ageGroup', opts.ageGroup);
+    populate('incomeType', opts.incomeType);
+    populate('creditInfo', opts.creditInfo);
+    populate('carUsage', opts.carUsage);
+    populate('drivingDistance', opts.drivingDistance);
+    populate('expectedContractTiming', opts.expectedContractTiming);
+    populate('desiredContractTerm', opts.desiredContractTerm);
+    populate('desiredInitialCostType', opts.desiredInitialCostType);
+    populate('maintenanceServiceLevel', opts.maintenanceServiceLevel);
+    populate('customerStatus', opts.customerStatus);
+
+    Object.keys(opts).forEach(key => {
+        populate(key, opts[key]);
+    });
+    populate('filterCustomerStatus', opts.customerStatus);
+    populate('addressCity', opts.addressCities);
+  }
+
+  function getStatusClass(status) {
+    if (status === '상담 완료') return 'completed';
+    if (status === '상담 진행 중' || status === '연락 시도 중') return 'consulting';
+    return '';
+  }
+
+  function displayAssignedCustomers(customers, isNew) {
+    const ul = document.getElementById('assignedCustomersList');
+    const btn = document.getElementById('loadMoreBtn');
+    if (isNew) ul.innerHTML = '';
+    
+    if (customers.length === 0 && isNew) {
+      ul.innerHTML = '<li style="padding:20px; justify-content:center; color:#666;">조건에 맞는 고객이 없습니다.</li>';
+    } else {
+      customers.forEach(c => {
+        const li = document.createElement('li');
+        li.onclick = () => {
+            window.customerDetailSource = 'listPanel'; 
+            selectCustomer(c.assignmentId);
+        };
+        const statusClass = getStatusClass(c.customerStatus);
+        let combinedMemo = c.interestedCarModel || '';
+        if(c.customerMemo) combinedMemo = combinedMemo ? `${combinedMemo} | ${c.customerMemo}` : c.customerMemo;
+        if(!combinedMemo) combinedMemo = ''; 
+
+        const dateStr = formatDate(c.assignmentDate);
+        const lastLogStr = c.lastLogDate ? formatDate(c.lastLogDate) : '-';
+
+        li.innerHTML = `
+          <span class="col-db">${escapeHtml(c.dbType)}</span>
+          <span class="col-status"><span class="status-badge ${statusClass}">${escapeHtml(c.customerStatus)}</span></span>
+          <span class="col-name" title="${escapeHtml(c.customerName)}">${escapeHtml(c.customerName)}</span>
+          <span class="col-phone">${escapeHtml(formatPhoneNumber_Client(c.customerPhoneNumber))}</span>
+          <span class="col-memo" title="${escapeHtml(combinedMemo)}">${escapeHtml(combinedMemo)}</span>
+          <span class="col-last">${lastLogStr}</span>
+          <span class="col-date">${dateStr}</span>
+        `;
+        ul.appendChild(li);
+      });
+    }
+    
+    if (totalCustomerCount > (currentOffset + customers.length)) btn.classList.remove('hidden');
+    else btn.classList.add('hidden');
+    btn.disabled = false;
+  }
+
+  function displayAssignmentDetails(result) {
+    const data = result.assignment;
+    currentAssignmentId = data.assignmentId;
+    
+    const setVal = (id, v) => {
+      const el = document.getElementById(id);
+      if(el) {
+        if(el.type === 'date' && v) el.value = formatDate(v);
+        else if(el.tagName === 'SPAN') {
+            if(id.includes('Date') || id.includes('Time')) el.textContent = formatDate(v);
+            else el.textContent = v || '';
+        }
+        else el.value = v || '';
+      }
+    };
+
+    setVal('detailAssignmentId', data.assignmentId);
+    setVal('detailDbType', data.dbType);
+    setVal('detailAssignmentDate', data.assignmentDate);
+    setVal('detailCustomerPhoneNumber', data.customerPhoneNumber);
+    
+    setVal('leadSource', data.leadSource);
+    setVal('customerType', data.customerType);
+    setVal('gender', data.gender);
+    setVal('ageGroup', data.ageGroup);
+    setVal('addressCity', data.addressCity);
+    
+    setVal('incomeType', data.incomeType);
+    setVal('creditInfo', data.creditInfo);
+    setVal('occupation', data.occupation);
+    setVal('interestedCarModel', data.interestedCarModel);
+    setVal('comparisonCarModel', data.comparisonCarModel);
+    setVal('ownedCarModel', data.ownedCarModel);
+    setVal('carUsage', data.carUsage);
+    setVal('driverScope', data.driverScope);
+    setVal('drivingDistance', data.drivingDistance);
+    setVal('expectedContractTiming', data.expectedContractTiming);
+    setVal('desiredContractTerm', data.desiredContractTerm);
+    setVal('desiredInitialCostType', data.desiredInitialCostType);
+    setVal('maintenanceServiceLevel', data.maintenanceServiceLevel);
+    setVal('isRepurchase', data.isRepurchase);
+    setVal('paymentMethod', data.paymentMethod);
+    setVal('customerStatus', data.customerStatus);
+    setVal('customerMemo', data.customerMemo);
+    setVal('quoteNumber', data.quoteNumber);
+    setVal('approvalNumber', data.approvalNumber);
+
+    document.getElementById('detailCustomerNameText').textContent = data.customerName;
+
+    // ★ 중요: 낙관적 락 기준 시간 저장
+    currentDataTimestamp = data.updatedAt;
+  }
+
+  function renderLogs(logs) {
+    const div = document.getElementById('consultationLogs');
+    div.innerHTML = '';
+    
+    if(!logs || logs.length === 0) {
+      div.innerHTML = '<p style="text-align:center; padding:20px; color:#777;">기록 없음</p>';
+      return;
+    }
+
+    logs.forEach(l => {
+      const card = document.createElement('div');
+      card.className = 'log-entry-card';
+      const timeStr = new Date(l.logTimestamp).toLocaleString();
+      const writer = l.userName || '상담원'; 
+      const isMyLog = (l.userName === currentUserName);
+      
+      let buttonsHtml = '';
+      if (isMyLog) {
+          buttonsHtml = `
+            <div class="log-actions" style="display:flex; gap:8px; margin-top:8px; justify-content:flex-end;">
+                <button onclick="editLog('${l.logId}', this)" class="secondary" style="padding:2px 8px; font-size:0.8rem;">수정</button>
+                <button onclick="deleteLog('${l.logId}')" class="secondary" style="padding:2px 8px; font-size:0.8rem; background:#dc3545; border:none;">삭제</button>
+            </div>
+          `;
+      }
+
+      card.innerHTML = `
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:5px;">
+            <span class="log-time" style="color:#007bff; font-weight:bold; font-size:0.8rem;">${timeStr}</span>
+            <span style="font-size:0.75rem; color:#999;">${escapeHtml(writer)}</span>
+        </div>
+        <div class="log-content" id="content-${l.logId}" style="white-space: pre-wrap; line-height:1.4;">${escapeHtml(l.logContent)}</div>
+        ${buttonsHtml}
+      `;
+      div.appendChild(card);
+    });
+  }
+
+  // [상세화면용] 계약 이력 (고객명 제외)
+  function renderContracts(contracts) {
+    const ul = document.getElementById('contractList');
+    ul.innerHTML = '';
+    if(!contracts || contracts.length === 0) {
+      ul.innerHTML = '<li style="text-align:center; padding:15px; color:#999; font-size:0.9rem;">계약 이력이 없습니다.</li>';
+      return;
+    }
+    contracts.forEach(c => {
+      const li = document.createElement('li');
+      li.onclick = (e) => {
+         e.stopPropagation();
+         const currentName = document.getElementById('detailCustomerNameText').textContent;
+         const contractData = { ...c, customers: c.customers || { customer_name: currentName } };
+         // ★ 여기서 'customer_detail'을 넘겨주어야 뒤로가기 시 고객 상세로 옵니다.
+         viewContractDetail(contractData, 'customer_detail');
+      };
+
+      const cDate = formatDate(c.contract_date);
+      const cModel = c.contract_car_model || '-';
+      const cStatus = c.contract_status || '-';
+      
+      li.innerHTML = `
+        <span class="col-cont-date" style="flex:0 0 90px;">${cDate}</span>
+        <span class="col-cont-car" style="flex:1; padding-left:10px;" title="${escapeHtml(cModel)}">${escapeHtml(cModel)}</span>
+        <span class="col-cont-status" style="flex:0 0 80px;"><span class="status-badge">${escapeHtml(cStatus)}</span></span>
+      `;
+      ul.appendChild(li);
+    });
+  }
+
+  // [전체목록탭용] 계약 목록 (고객명 포함)
+  function renderGlobalContracts(contracts, isNew) {
+    const div = document.getElementById('globalContractList');
+    if (!div) return;
+
+    if (isNew) {
+        div.innerHTML = '';
+    }
+
+    if ((!contracts || contracts.length === 0) && isNew) {
+        div.innerHTML = '<div style="padding:20px; text-align:center; color:#999;">조회된 계약 내역이 없습니다.</div>';
+        return;
+    }
+
+    contracts.forEach(c => {
+        const custName = (c.customers && c.customers.customer_name) ? c.customers.customer_name : '(미확인)';
+        const cDate = formatDate(c.contract_date);
+        const cStatus = c.contract_status || '-';
+
+        const row = document.createElement('div');
+        row.className = 'contract-row';
+        // 전체 목록에서 클릭 시 기본값('contract_list')로 이동
+        row.onclick = () => viewContractDetail(c, 'contract_list');
+
+        row.innerHTML = `
+          <span class="col-cont-date">${cDate}</span>
+          <span class="col-cont-car">${escapeHtml(c.contract_car_model)}</span>
+          <span class="col-cont-cust">${escapeHtml(custName)}</span>
+          <span class="col-cont-status"><span class="status-badge">${escapeHtml(cStatus)}</span></span>
+        `;
+        div.appendChild(row);
+    });
+  }
+
+  // 계약 상세 화면 데이터 바인딩
+  async function viewContractDetail(contractData, source = 'contract_list') {
+    currentViewingContract = contractData;
+    
+    // ★ 핵심: 전역 변수 업데이트 (Js_Config에 선언된 변수 사용)
+    currentContractSource = source;
+
+    // 패널 전환
+    document.getElementById('listPanel').classList.add('hidden');
+    if(document.getElementById('contractListPanel')) document.getElementById('contractListPanel').classList.add('hidden');
+    document.getElementById('customerDetailPanel').classList.add('hidden');
+    document.getElementById('contractDetailPanel').classList.remove('hidden');
+
+    // 뒤로가기 버튼 텍스트 설정
+    const backBtn = document.getElementById('dynamicBackBtn');
+    if(backBtn) {
+        if(source === 'customer_detail') {
+            backBtn.innerHTML = '&larr; 고객 상세로 돌아가기';
+        } else {
+            backBtn.innerHTML = '&larr; 계약 목록으로 돌아가기';
+        }
+    }
+
+    const setTxt = (id, txt) => {
+        const el = document.getElementById(id);
+        if(el) el.textContent = txt || '-';
+    };
+
+    setTxt('viewContStatus', contractData.contract_status);
+    setTxt('viewContDate', formatDate(contractData.contract_date));
+    setTxt('viewContCar', contractData.contract_car_model);
+    setTxt('viewContAmount', contractData.contract_amount ? Number(contractData.contract_amount).toLocaleString() + '원' : '0원');
+    setTxt('viewContTerm', contractData.contract_term);
+    setTxt('viewContSummary', contractData.contract_summary);
+    
+    const realContractorName = (contractData.customers && contractData.customers.customer_name) 
+                               ? contractData.customers.customer_name 
+                               : '(정보 없음)';
+    const relation = contractData.relationship || '본인';
+
+    setTxt('viewContRealName', realContractorName); 
+    setTxt('viewContRelation', relation);           
+
+    const contractorId = contractData.assignment_id; 
+    const consultantId = contractData.consultant_id || contractData.assignment_id;
+
+    if (contractorId === consultantId) {
+        setTxt('viewContCustomerName', realContractorName);
+    } else {
+        const isViewingConsultantPage = (currentAssignmentId === consultantId);
+        if (source === 'customer_detail' && isViewingConsultantPage) {
+             const currentCustName = document.getElementById('detailCustomerNameText').textContent;
+             setTxt('viewContCustomerName', currentCustName);
+        } else {
+             setTxt('viewContCustomerName', '(조회 중...)');
+             const { data: consultantData } = await supabase.from('customers').select('customer_name').eq('assignment_id', consultantId).maybeSingle();
+             if (consultantData) setTxt('viewContCustomerName', consultantData.customer_name);
+             else setTxt('viewContCustomerName', '(정보 없음)');
+        }
+    }
+
+    const singleBtnArea = document.getElementById('singleButtonArea');
+    const dualBtnArea = document.getElementById('dualButtonArea');
+    
+    if (contractorId !== consultantId) {
+          singleBtnArea.classList.add('hidden');
+          dualBtnArea.classList.remove('hidden');
+          const contractorLabelName = (contractData.customers && contractData.customers.customer_name) ? contractData.customers.customer_name : '실계약자';
+          document.getElementById('goToContractorBtn').innerHTML = `📑 실계약자(${contractorLabelName}) &rarr;`;
+    } else {
+          singleBtnArea.classList.remove('hidden');
+          dualBtnArea.classList.add('hidden');
+    }
+  }
+
+  // [탭 전환 함수]
+  function switchTab(mode) {
+    const customerPanel = document.getElementById('listPanel');
+    const contractPanel = document.getElementById('contractListPanel');
+    const custDetailPanel = document.getElementById('customerDetailPanel');
+    const contDetailPanel = document.getElementById('contractDetailPanel');
+    
+    custDetailPanel.classList.add('hidden');
+    contDetailPanel.classList.add('hidden');
+    
+    const btnCust = document.getElementById('tabCustomerBtn');
+    const btnCont = document.getElementById('tabContractBtn');
+
+    window.customerDetailSource = null;
+    currentContractSource = 'contract_list'; // 탭 전환 시 초기화
+
+    if (mode === 'customer') {
+      customerPanel.classList.remove('hidden');
+      if(contractPanel) contractPanel.classList.add('hidden');
+      btnCust.classList.add('active'); 
+      btnCont.classList.remove('active');
+      fetchCustomers(true);
+    } else {
+      customerPanel.classList.add('hidden');
+      if(contractPanel) contractPanel.classList.remove('hidden');
+      btnCust.classList.remove('active');
+      btnCont.classList.add('active');
+      fetchGlobalContracts(true);
+    }
+  }
+
+  // ============================================================================
+  // [6] 이벤트 리스너 모음 (UI 관련)
+  // ============================================================================
+  function setupGlobalEventListeners() {
+    
+    // 탭 버튼 리스너
+    const tabCustomerBtn = document.getElementById('tabCustomerBtn');
+    const tabContractBtn = document.getElementById('tabContractBtn');
+    if(tabCustomerBtn) tabCustomerBtn.addEventListener('click', () => switchTab('customer'));
+    if(tabContractBtn) tabContractBtn.addEventListener('click', () => switchTab('contract'));
+    
+    // 계약 검색 버튼
+    const searchContractBtn = document.getElementById('searchContractBtn');
+    if(searchContractBtn) searchContractBtn.addEventListener('click', () => fetchGlobalContracts(true));
+
+    // 구글 로그인
+    const loginBtn = document.getElementById('googleLoginBtn');
+    if(loginBtn) {
+      loginBtn.addEventListener('click', async () => {
+        const redirectUrl = document.body.dataset.scriptUrl || "https://script.google.com/macros/s/AKfycbwV96l1hMuWCUMn4vLHPxvC6XM0NeKh1YREjZp1sYMgYqHL0F2JohW63NI0Rf5vWI5a/exec";
+        const { data, error } = await supabase.auth.signInWithOAuth({
+          provider: 'google',
+          options: { redirectTo: redirectUrl, skipBrowserRedirect: true, queryParams: { access_type: 'offline', prompt: 'consent' } }
+        });
+        if (error) alert(error.message);
+        else if (data.url) window.open(data.url, '_blank');
+      });
+    }
+    
+    // 로그아웃
+    const logoutBtn = document.getElementById('logoutBtn');
+    if (logoutBtn) {
+      logoutBtn.addEventListener('click', async () => {
+        const { error } = await supabase.auth.signOut();
+        if (error) alert("로그아웃 실패: " + error.message);
+        else { alert("로그아웃 되었습니다."); window.location.reload(); }
+      });
+    }
+
+    // 필터 버튼
+    document.getElementById('applyFilterBtn').addEventListener('click', () => fetchCustomers(true));
+    document.getElementById('loadMoreBtn').addEventListener('click', () => fetchCustomers(false));
+    document.getElementById('resetFilterBtn').addEventListener('click', () => {
+        const setVal = (id, v) => { const el = document.getElementById(id); if(el) el.value = v; };
+        setVal('filterSearchTerm', '');
+        setVal('filterDbType', '');
+        setVal('filterCustomerStatus', '');
+        setVal('filterAssignmentDateFrom', ''); 
+        setVal('filterAssignmentDateTo', '');
+        fetchCustomers(true);
+    });
+
+    // 뒤로가기 (고객 상세 -> 목록)
+    document.getElementById('backToListBtn').addEventListener('click', (e) => {
+      e.preventDefault();
+      document.getElementById('customerDetailPanel').classList.add('hidden');
+      
+      if (window.customerDetailSource === 'contractDetailPanel') {
+          document.getElementById('contractDetailPanel').classList.remove('hidden');
+      } else {
+          document.getElementById('listPanel').classList.remove('hidden');
+      }
+    });
+
+    const getVal = (id) => { const el = document.getElementById(id); return el ? el.value : ''; };
+
+    // 고객 정보 저장 (낙관적 락 적용)
+    document.getElementById('saveCustomerDetailsBtn').addEventListener('click', async (e) => {
+      if(!currentAssignmentId) return;
+      
+      const updates = {
+        customer_type: getVal('customerType'),
+        gender: getVal('gender'),
+        age_group: getVal('ageGroup'),
+        address_city: getVal('addressCity'),
+        income_type: getVal('incomeType'),
+        credit_info: getVal('creditInfo'),
+        interested_car_model: getVal('interestedCarModel'),
+        comparison_car_model: getVal('comparisonCarModel'),
+        owned_car_model: getVal('ownedCarModel'),
+        car_usage: getVal('carUsage'),
+        driver_scope: getVal('driverScope'),
+        driving_distance: getVal('drivingDistance'),
+        expected_contract_timing: getVal('expectedContractTiming'),
+        desired_contract_term: getVal('desiredContractTerm'),
+        desired_initial_cost_type: getVal('desiredInitialCostType'),
+        maintenance_service_level: getVal('maintenanceServiceLevel'),
+        is_repurchase: getVal('isRepurchase'),
+        payment_method: getVal('paymentMethod'),
+        customer_status: getVal('customerStatus'),
+        customer_memo: getVal('customerMemo'),
+        quote_number: getVal('quoteNumber'),
+        approval_number: getVal('approvalNumber'),
+        lead_source: getVal('leadSource'),
+        occupation: getVal('occupation'),
+        updated_at: new Date().toISOString()
+      };
+      
+      showLoader();
+      const { data, error } = await supabase
+          .from('customers')
+          .update(updates)
+          .eq('assignment_id', currentAssignmentId)
+          .eq('updated_at', currentDataTimestamp) // 낙관적 락
+          .select();
+
+      hideLoader();
+      
+      if (error) {
+        handleFailure(error);
+      } else if (!data || data.length === 0) {
+          alert("🚨 데이터 충돌 발생!\n\n다른 사용자가 이미 이 고객 정보를 수정했습니다.\n최신 정보를 다시 불러온 후 작업해 주세요.");
+      } else {
+        showSaveFeedback(e.target);
+        currentDataTimestamp = data[0].updated_at;
+      }
+    });
+
+    // 상담 로그 추가
+    document.getElementById('addLogBtn').addEventListener('click', async () => {
+      if(!currentAssignmentId) return;
+      const txt = document.getElementById('newLogContent').value.trim();
+      if(!txt) return alert('내용을 입력하세요');
+      
+      showLoader();
+      const nowISO = new Date().toISOString(); 
+      const newLog = {
+        log_id: 'LOG_' + Date.now(),
+        assignment_id: currentAssignmentId,
+        log_content: txt,
+        user_name: currentUserName,
+        log_timestamp: nowISO
+      };
+      
+      const { error: logError } = await supabase.from('consultation_logs').insert([newLog]);
+      if(logError) { handleFailure(logError); return; } 
+
+      // 고객 테이블 갱신
+      await supabase.from('customers').update({ last_log_date: nowISO, updated_at: nowISO }).eq('assignment_id', currentAssignmentId);
+      
+      hideLoader();
+      document.getElementById('newLogContent').value = '';
+      selectCustomer(currentAssignmentId); 
+    });
+
+    // 전화번호 수정
+    document.getElementById('savePhoneNumberBtn').addEventListener('click', async(e) => {
+      if(!currentAssignmentId) return;
+      const rawPhone = document.getElementById('detailCustomerPhoneNumber').value.replace(/\D/g, "");
+      showLoader();
+      const { error } = await supabase.from('customers').update({ customer_phone: rawPhone }).eq('assignment_id', currentAssignmentId);
+      hideLoader();
+      if(error) handleFailure(error);
+      else showSaveFeedback(e.target);
+    });
+
+    // 신규 고객 모달
+    document.getElementById('openAddCustomerModalBtn').addEventListener('click', () => document.getElementById('addCustomerModal').classList.remove('hidden'));
+    document.getElementById('cancelAddCustomerBtn').addEventListener('click', () => document.getElementById('addCustomerModal').classList.add('hidden'));
+    
+    // ★ 신규 고객 저장 (이 부분이 누락되었다고 하셨던 부분)
+    document.getElementById('saveNewCustomerBtn').addEventListener('click', async () => {
+      const name = document.getElementById('newCustomerName').value;
+      let phone = document.getElementById('newCustomerPhoneNumber').value.replace(/\D/g, "");
+      const dbType = document.getElementById('newDbType').value;
+      
+      if(!name) return alert('이름 필수');
+
+      showLoader();
+      const ts = Date.now();
+      const nowISO = new Date().toISOString();
+      
+      const { error } = await supabase.from('customers').insert([{
+        assignment_id: "A_" + ts,
+        customer_id: "C_" + ts,
+        customer_name: name,
+        customer_phone: formatPhoneNumber_Client(phone),
+        db_type: dbType,
+        assigned_to: currentUserName,
+        owner_email: currentUserEmail,
+        assignment_date: nowISO,
+        customer_status: "배정됨",
+        updated_at: nowISO // 신규 생성 시에도 시간 입력
+      }]);
+      
+      hideLoader();
+      if(error) handleFailure(error);
+      else {
+        document.getElementById('addCustomerModal').classList.add('hidden');
+        fetchCustomers(true);
+      }
+    });
+
+    // 신규 계약 모달
+    document.getElementById('openAddContractModalBtn').addEventListener('click', () => {
+        if(!currentAssignmentId) return;
+        document.getElementById('addContractModal').classList.remove('hidden');
+        document.getElementById('isDifferentContractor').checked = false;
+        document.getElementById('realContractorForm').classList.add('hidden');
+        document.getElementById('realContractorName').value = '';
+        document.getElementById('realContractorPhone').value = '';
+    });
+    document.getElementById('cancelAddContractBtn').addEventListener('click', () => document.getElementById('addContractModal').classList.add('hidden'));
+    document.getElementById('isDifferentContractor').addEventListener('change', (e) => {
+        const form = document.getElementById('realContractorForm');
+        if(e.target.checked) form.classList.remove('hidden'); else form.classList.add('hidden');
+    });
+
+    // 신규 계약 저장
+    document.getElementById('saveNewContractBtn').addEventListener('click', async () => {
+        const date = document.getElementById('modalContractDate').value;
+        const car = document.getElementById('modalContractCarModel').value;
+        if(!date || !car) return alert('날짜와 차종은 필수입니다.');
+
+        const isProxy = document.getElementById('isDifferentContractor').checked;
+        const realName = document.getElementById('realContractorName').value.trim();
+        const realPhone = document.getElementById('realContractorPhone').value.trim().replace(/\D/g, "");
+        const relation = document.getElementById('contractorRelation').value;
+
+        if(isProxy && (!realName || !realPhone)) return alert('실계약자 정보를 입력하세요.');
+
+        showLoader();
+        try {
+            let targetAssignmentId = currentAssignmentId;
+            let actualContractorId = currentAssignmentId;
+            let consultantId = currentAssignmentId;
+            let relationshipVal = '본인';
+            const nowISO = new Date().toISOString();
+
+            if (isProxy) {
+                relationshipVal = relation;
+                let memoSuffix = (relation !== '지인/소개') ? "타인명의 진행건" : "소개건";
+                const autoMemo = `[자동생성] ${document.getElementById('detailCustomerNameText').textContent}님의 ${memoSuffix}`;
+
+                const { data: existUser } = await supabase.from('customers').select('assignment_id').eq('customer_phone', realPhone).maybeSingle();
+                
+                if (existUser) {
+                    targetAssignmentId = existUser.assignment_id;
+                    actualContractorId = existUser.assignment_id;
+                    await supabase.from('customers').update({ last_log_date: nowISO, updated_at: nowISO }).eq('assignment_id', existUser.assignment_id);
+                } else {
+                    const ts = Date.now();
+                    const newId = "A_" + ts;
+                    await supabase.from('customers').insert([{
+                        assignment_id: newId,
+                        customer_id: "C_" + ts,
+                        customer_name: realName,
+                        customer_phone: realPhone,
+                        assigned_to: currentUserName,
+                        owner_email: currentUserEmail,
+                        customer_status: '계약 완료',
+                        lead_source: relationshipVal,
+                        customer_memo: autoMemo,
+                        last_log_date: nowISO,
+                        updated_at: nowISO
+                    }]);
+                    targetAssignmentId = newId;
+                    actualContractorId = newId;
+                }
+            }
+
+            const { error } = await supabase.from('contracts').insert([{
+                contract_id: "CN_" + Date.now(),
+                assignment_id: targetAssignmentId,
+                contract_date: date,
+                contract_car_model: car,
+                contract_amount: document.getElementById('modalContractAmount').value || 0,
+                contract_term: document.getElementById('modalContractTerm').value,
+                contract_summary: document.getElementById('modalContractSummary').value,
+                contract_status: '진행중',
+                actual_contractor_id: actualContractorId,
+                consultant_id: consultantId,
+                relationship: relationshipVal
+            }]);
+
+            if(error) throw error;
+            hideLoader();
+            document.getElementById('addContractModal').classList.add('hidden');
+            selectCustomer(currentAssignmentId); 
+            alert("계약 저장 완료");
+        } catch(e) { handleFailure(e); }
+    });
+    
+    document.getElementById('newCustomerPhoneNumber').addEventListener('blur', (e) => { e.target.value = formatPhoneNumber_Client(e.target.value); });
+
+    const goToCustBtn = document.getElementById('goToCustomerDetailBtn');
+    if (goToCustBtn) {
+        goToCustBtn.addEventListener('click', () => {
+             if (currentViewingContract && currentViewingContract.assignment_id) {
+                 window.customerDetailSource = 'contractDetailPanel';
+                 selectCustomer(currentViewingContract.assignment_id);
+             } else { alert("이 계약에 연결된 고객 정보를 찾을 수 없습니다."); }
+        });
+    }
+
+    const goToContractorBtn = document.getElementById('goToContractorBtn');
+    if(goToContractorBtn) {
+        goToContractorBtn.addEventListener('click', () => {
+            if (currentViewingContract && currentViewingContract.assignment_id) {
+                window.customerDetailSource = 'contractDetailPanel';
+                selectCustomer(currentViewingContract.assignment_id);
+            } else { alert("연결된 실계약자 정보가 없습니다."); }
+        });
+    }
+
+    const goToConsultantBtn = document.getElementById('goToConsultantBtn');
+    if(goToConsultantBtn) {
+        goToConsultantBtn.addEventListener('click', () => {
+            if (currentViewingContract && currentViewingContract.consultant_id) {
+                window.customerDetailSource = 'contractDetailPanel';
+                selectCustomer(currentViewingContract.consultant_id);
+            } else { alert("연결된 상담 고객 정보가 없습니다."); }
+        });
+    }
+
+    const handleSort = (column, iconId) => {
+        if (currentSortColumn === column) currentSortAscending = !currentSortAscending;
+        else { currentSortColumn = column; currentSortAscending = false; }
+        
+        document.getElementById('sortIconLastLog').textContent = '';
+        document.getElementById('sortIconAssignmentDate').textContent = '';
+        document.getElementById(iconId).textContent = currentSortAscending ? '▲' : '▼';
+        fetchCustomers(true);
+    };
+
+    const btnLastLog = document.getElementById('sortLastLogBtn');
+    if (btnLastLog) btnLastLog.addEventListener('click', () => handleSort('last_log_date', 'sortIconLastLog'));
+
+    const btnAssignDate = document.getElementById('sortAssignmentDateBtn');
+    if (btnAssignDate) btnAssignDate.addEventListener('click', () => handleSort('assignment_date', 'sortIconAssignmentDate'));
+
+    // ★ [핵심 수정] 계약 상세 -> 돌아가기 버튼 (여기서 전역 변수를 참조하여 분기)
+    const backBtn = document.getElementById('dynamicBackBtn');
+    if(backBtn) {
+        backBtn.addEventListener('click', (e) => {
+            e.preventDefault(); 
+            document.getElementById('contractDetailPanel').classList.add('hidden');
+            
+            // 전역 변수(currentContractSource)가 'customer_detail'이면 고객 상세로, 아니면 목록으로
+            if(currentContractSource === 'customer_detail') {
+                document.getElementById('customerDetailPanel').classList.remove('hidden');
+            } else {
+                document.getElementById('contractListPanel').classList.remove('hidden');
+            }
+        });
+    }
+  }
+
+  // ============================================================================
+  // [5] 메인 실행 (DOMContentLoaded)
+  // ============================================================================
+  document.addEventListener('DOMContentLoaded', async () => {
+    google.script.url.getLocation(async function(location) {
+        const hash = location.hash; 
+        if (hash && hash.includes('access_token')) {
+            const loginModal = document.getElementById('loginModal');
+            if(loginModal) loginModal.classList.add('hidden');
+            const params = new URLSearchParams(hash.startsWith('#') ? hash.substring(1) : hash);
+            const accessToken = params.get('access_token');
+            const refreshToken = params.get('refresh_token');
+            if (accessToken) {
+                const { error } = await supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken || '' });
+                if (!error) {
+                    document.body.innerHTML = `<div style="height:100vh; display:flex; flex-direction:column; justify-content:center; align-items:center;"><h2>✅ 로그인 성공!</h2><button onclick="window.open('', '_self').close()">창 닫기</button></div>`;
+                    setTimeout(() => window.open('', '_self').close(), 1000);
+                    return; 
+                }
+            }
+        }
+        initApp();
+    });
+  });
+
+  async function initApp() {
+    await populateSelectOptions();
+    const dateFromEl = document.getElementById('filterAssignmentDateFrom');
+    if (dateFromEl) {
+      const today = new Date();
+      const prev = new Date(); prev.setMonth(today.getMonth()-3);
+      dateFromEl.value = prev.toISOString().split('T')[0];
+    }
+    setupGlobalEventListeners();
+    const { data } = await supabase.auth.getSession();
+    if (data.session) onSessionValid(data.session);
+    else document.getElementById('loginModal').classList.remove('hidden');
+    
+    supabase.auth.onAuthStateChange((event, sess) => {
+        if (event === 'SIGNED_IN' && sess) onSessionValid(sess);
+        else if (event === 'SIGNED_OUT') document.getElementById('loginModal').classList.remove('hidden');
+    });
+  }
+
+  async function onSessionValid(sess) {
+    session = sess;
+    currentUserEmail = sess.user.email;
+    document.getElementById('loginModal').classList.add('hidden');
+    const { data } = await supabase.from('profiles').select('korean_name').eq('email', currentUserEmail).maybeSingle();
+    currentUserName = data ? data.korean_name : currentUserEmail;
+    fetchCustomers(true);
+  }
