@@ -1,4 +1,34 @@
 // ============================================================================
+// [0] DOM 선택 헬퍼 (JQuery/Alpine 스타일 흉내)
+// ============================================================================
+
+// ID로 요소 선택 (가장 많이 사용됨)
+const $ = (id) => document.getElementById(id);
+
+// 값 안전하게 가져오기 (요소가 없어도 에러 안 나게)
+const getVal = (id) => {
+    const el = $(id);
+    return el ? el.value : '';
+};
+
+// 값 안전하게 넣기
+const setVal = (id, value) => {
+    const el = $(id);
+    if (!el) return;
+    if (el.tagName === 'SPAN' || el.tagName === 'DIV') {
+        el.textContent = value || '';
+    } else {
+        el.value = value || '';
+    }
+};
+
+// 이벤트 리스너 단축
+const on = (id, event, handler) => {
+    const el = $(id);
+    if (el) el.addEventListener(event, handler);
+};
+
+// ============================================================================
 // [2] UI 및 유틸리티 함수
 // ============================================================================
 function showLoader() { if(loader) loader.classList.remove('hidden'); }
