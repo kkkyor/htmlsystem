@@ -31,8 +31,22 @@ const on = (id, event, handler) => {
 // ============================================================================
 // [2] UI 및 유틸리티 함수
 // ============================================================================
-function showLoader() { if(loader) loader.classList.remove('hidden'); }
-function hideLoader() { if(loader) loader.classList.add('hidden'); }
+
+// [수정] 로딩창을 띄울 때마다 문구를 '처리 중...'으로 초기화
+function showLoader() { 
+    const el = document.getElementById('loader');
+    const txt = document.querySelector('#loader p');
+    
+    // 매번 기본 문구로 리셋
+    if(txt) txt.textContent = "처리 중...";
+    
+    if(el) el.classList.remove('hidden'); 
+}
+
+function hideLoader() { 
+    const el = document.getElementById('loader');
+    if(el) el.classList.add('hidden'); 
+}
 
 function escapeHtml(text) {
   if (text === null || text === undefined) return '';
@@ -41,7 +55,8 @@ function escapeHtml(text) {
 
 function formatPhoneNumber_Client(phone) {
   if (!phone) return "";
-  const digits = phone.replace(/\D/g, "");
+  const digits = String(phone).replace(/\D/g, "");
+  
   if (digits.length === 11) return `${digits.substring(0, 3)}-${digits.substring(3, 7)}-${digits.substring(7)}`;
   if (digits.length === 10) return `${digits.substring(0, 3)}-${digits.substring(3, 6)}-${digits.substring(6)}`;
   return phone;
@@ -50,6 +65,7 @@ function formatPhoneNumber_Client(phone) {
 function formatDate(isoString) {
   if (!isoString) return '';
   try {
+    if (typeof isoString !== 'string') return String(isoString);
     return isoString.split('T')[0];
   } catch (e) {
     return isoString;
@@ -65,19 +81,39 @@ function handleFailure(error) {
 }
 
 function showSaveFeedback(btn) {
+  if (!btn) return;
   const origin = btn.textContent;
   btn.textContent = "✅ 저장됨";
   btn.disabled = true;
-  setTimeout(() => { btn.textContent = origin; btn.disabled = false; }, 1500);
+  setTimeout(() => { 
+      btn.textContent = origin; 
+      btn.disabled = false; 
+  }, 1500);
 }
 
 function getStatusClass(status) {
-  if (status === '상담 완료') return 'completed';
-  if (status === '상담 진행 중' || status === '연락 시도 중') return 'consulting';
-  return '';
+  // 상태별 색상 클래스 반환
+  if (!status) return '';
+  
+  const successList = ['계약 완료', '출고 완료', '이용중', '상담 완료', '심사 완료'];
+  if (successList.includes(status)) return 'success';
+  
+  const warningList = ['상담 진행 중', '연락 시도 중', '진행중', '견적 발송', '추가 정보 요청', '심사 진행중', '출고 대기'];
+  if (warningList.includes(status)) return 'warning';
+  
+  const dangerList = ['취소', '중도 해지', '상담 이탈', '상담 보류', '조기 반납', '심사 부결', '취소/해지'];
+  if (dangerList.includes(status)) return 'danger';
+  
+  const infoList = ['가망 고객', '심사 승인'];
+  if (infoList.includes(status)) return 'info';
+  
+  const darkList = ['만기 반납', '만기 인계', '기존 고객', '배정됨'];
+  if (darkList.includes(status)) return 'dark';
+
+  return ''; 
 }
 
-// [헬퍼] 로딩 메시지 변경 (loader 내부에 텍스트가 있다면)
+// [헬퍼] 로딩 메시지 변경 (AI 분석 등에서 사용)
 function setStatusMessage(msg) {
   const loaderText = document.querySelector('#loader p');
   if(loaderText) loaderText.textContent = msg;
