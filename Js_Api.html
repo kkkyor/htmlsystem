@@ -1,587 +1,587 @@
-// ============================================================================
+  // ============================================================================
   // [Js_Api.html]
   // ============================================================================
 
-  // ----------------------------------------------------------------------------
-  // 4-1. 고객 목록 조회
-  // ----------------------------------------------------------------------------
-  async function fetchCustomers(isNew = false) {
-    if(isNew) {
-      currentOffset = 0;
-      const getSafeVal = (id) => { const el = document.getElementById(id); return el ? el.value : ''; };
-      currentFilters = {
-        searchTerm: getSafeVal('filterSearchTerm'),
-        dbType: getSafeVal('filterDbType'),
-        status: getSafeVal('filterCustomerStatus'),
-        dateFrom: getSafeVal('filterAssignmentDateFrom'),
-        dateTo: getSafeVal('filterAssignmentDateTo')
-      };
-    } else {
-      currentOffset += PAGE_SIZE;
-    }
-
-    showLoader();
-    try {
-      const isLastLogSort = (currentSortColumn === 'last_log_date');
-      const nullsFirstOption = isLastLogSort ? true : false;
-
-      let query = supabase.from('customers').select('*', { count: 'exact' })
-        .range(currentOffset, currentOffset + PAGE_SIZE - 1)
-        .order(currentSortColumn, { ascending: currentSortAscending, nullsFirst: nullsFirstOption });
-
-      if (currentFilters.searchTerm) {
-         const term = currentFilters.searchTerm;
-         const cleanTerm = term.replace(/-/g, ''); 
-         const searchConditions = [
-            `customer_name.ilike.%${term}%`,
-            `customer_phone.ilike.%${cleanTerm}%`, 
-            `customer_phone.ilike.%${term}%`,
-            `customer_memo.ilike.%${term}%`,
-            `interested_car_model.ilike.%${term}%`
-         ].join(',');
-         query = query.or(searchConditions);
-      }
-      
-      if(currentFilters.status) query = query.eq('customer_status', currentFilters.status);
-      if(currentFilters.dbType) query = query.eq('db_type', currentFilters.dbType);
-      if(currentFilters.dateFrom) query = query.gte('assignment_date', currentFilters.dateFrom);
-      if(currentFilters.dateTo) {
-        const d = new Date(currentFilters.dateTo); d.setDate(d.getDate()+1);
-        query = query.lt('assignment_date', d.toISOString());
-      }
-
-      const { data, count, error } = await query;
-      if(error) throw error;
-      
-      totalCustomerCount = count;
-      displayAssignedCustomers(data.map(toUiData), isNew);
-    } catch(e) {
-      handleFailure(e);
-    } finally {
-      hideLoader();
-    }
-  }
-
-  // ----------------------------------------------------------------------------
-  // 4-2. 계약 목록 조회
-  // ----------------------------------------------------------------------------
-  async function fetchGlobalContracts(isNew = false) {
-    if (isNew) {
-      currentContractOffset = 0;
-    } else {
-      currentContractOffset += PAGE_SIZE;
-    }
-
-    showLoader();
-    try {
-      let query = supabase
-        .from('contracts')
-        .select('*, customers!inner(customer_name, customer_phone, assigned_to)')
-        .eq('customers.assigned_to', currentUserName)
-        .order('contract_date', { ascending: false });
-
-      const statusEl = document.getElementById('filterContractStatus');
-      const termEl = document.getElementById('contractSearchTerm');
-      const dateEl = document.getElementById('filterContractDateFrom');
-      
-      if (statusEl && statusEl.value) query = query.eq('contract_status', statusEl.value);
-      if (termEl && termEl.value) query = query.ilike('contract_car_model', `%${termEl.value}%`);
-      if (dateEl && dateEl.value) query = query.gte('contract_date', dateEl.value);
-
-      const { data, count, error } = await query; 
-      if (error) throw error;
-
-      if (isNew) {
-          renderGlobalContracts(data, true); 
+    // ----------------------------------------------------------------------------
+    // 4-1. 고객 목록 조회
+    // ----------------------------------------------------------------------------
+    async function fetchCustomers(isNew = false) {
+      if(isNew) {
+        currentOffset = 0;
+        const getSafeVal = (id) => { const el = document.getElementById(id); return el ? el.value : ''; };
+        currentFilters = {
+          searchTerm: getSafeVal('filterSearchTerm'),
+          dbType: getSafeVal('filterDbType'),
+          leadSource: getSafeVal('filterLeadSource'),
+          status: getSafeVal('filterCustomerStatus'),
+          dateFrom: getSafeVal('filterAssignmentDateFrom'),
+          dateTo: getSafeVal('filterAssignmentDateTo')
+        };
       } else {
-          renderGlobalContracts(data, false);
+        currentOffset += PAGE_SIZE;
       }
-    } catch (e) {
-      handleFailure(e);
-    } finally {
-      hideLoader();
-    }
-  }
 
-  // ----------------------------------------------------------------------------
-  // 4-3. 단일 고객 상세 조회
-  // ----------------------------------------------------------------------------
-  async function selectCustomer(id) {
-    showLoader();
-    try {
-      const { data: cust, error: e1 } = await supabase.from('customers').select('*').eq('assignment_id', id).maybeSingle();
-      if (e1) throw e1;
-      if (!cust) throw new Error("삭제되었거나 존재하지 않는 고객입니다.");
-      
-      const { data: logs, error: e2 } = await supabase.from('consultation_logs').select('*').eq('assignment_id', id).order('log_timestamp', {ascending:false});
-      if(e2) throw e2;
+      showLoader();
+      try {
+        const isLastLogSort = (currentSortColumn === 'last_log_date');
+        const nullsFirstOption = isLastLogSort ? true : false;
 
-      const { data: contracts, error: e3 } = await supabase.from('contracts')
-        .select('*, customers(customer_name)') 
-        .or(`assignment_id.eq.${id},consultant_id.eq.${id}`)
-        .order('contract_date', {ascending:false});
-      if(e3) throw e3;
+        let query = supabase.from('customers').select('*', { count: 'exact' })
+          .range(currentOffset, currentOffset + PAGE_SIZE - 1)
+          .order(currentSortColumn, { ascending: currentSortAscending, nullsFirst: nullsFirstOption });
 
-      document.getElementById('listPanel').classList.add('hidden');
-      if(document.getElementById('contractListPanel')) document.getElementById('contractListPanel').classList.add('hidden');
-      const contractPanel = document.getElementById('contractDetailPanel');
-      if(contractPanel) contractPanel.classList.add('hidden');
-
-      document.getElementById('customerDetailPanel').classList.remove('hidden');
-
-      displayAssignmentDetails({ assignment: toUiData(cust) });
-      
-      renderLogs(logs.map(l => ({ 
-          logId: l.log_id, 
-          logTimestamp: l.log_timestamp, 
-          logContent: l.log_content,
-          userName: l.user_name 
-      })));
-      renderContracts(contracts);
-
-    } catch(e) {
-      handleFailure(e);
-    } finally {
-      hideLoader();
-    }
-  }
-
-  // ----------------------------------------------------------------------------
-  // 4-4. 상담 로그 관리
-  // ----------------------------------------------------------------------------
-  async function deleteLog(logId) {
-    if (!confirm("정말 이 상담 기록을 삭제하시겠습니까?")) return;
-    showLoader();
-    const { error } = await supabase.from('consultation_logs').delete().eq('log_id', logId);
-    hideLoader();
-    if (error) alert("삭제 실패: " + error.message);
-    else if(currentAssignmentId) selectCustomer(currentAssignmentId);
-  }
-
-  async function editLog(logId, btnElement) {
-    const contentDiv = document.getElementById(`content-${logId}`);
-    const currentContent = contentDiv.textContent;
-    const card = btnElement.closest('.log-entry-card');
-    const actionsDiv = btnElement.closest('.log-actions');
-    if (card.querySelector('textarea')) return;
-
-    contentDiv.style.display = 'none';
-    actionsDiv.style.display = 'none';
-
-    const editorDiv = document.createElement('div');
-    editorDiv.innerHTML = `
-        <textarea style="width:100%; height:100px; margin:5px 0; border:1px solid #ccc; padding:5px;">${currentContent}</textarea>
-        <div style="text-align:right; gap:5px; display:flex; justify-content:flex-end;">
-            <button id="save-${logId}" style="padding:4px 10px; font-size:0.8rem;">저장</button>
-            <button id="cancel-${logId}" class="secondary" style="padding:4px 10px; font-size:0.8rem;">취소</button>
-        </div>
-    `;
-    card.appendChild(editorDiv);
-
-    document.getElementById(`save-${logId}`).onclick = async () => {
-        const newText = editorDiv.querySelector('textarea').value;
-        if (!newText.trim()) return alert("내용을 입력하세요.");
-        showLoader();
-        const { error } = await supabase.from('consultation_logs').update({ log_content: newText }).eq('log_id', logId);
-        hideLoader();
-        if (error) alert("수정 실패: " + error.message);
-        else if(currentAssignmentId) selectCustomer(currentAssignmentId);
-    };
-
-    document.getElementById(`cancel-${logId}`).onclick = () => {
-        editorDiv.remove();
-        contentDiv.style.display = 'block';
-        actionsDiv.style.display = 'flex';
-    };
-  }
-
-  // ----------------------------------------------------------------------------
-  // 4-5. Cloud Run AI 분석
-  // ----------------------------------------------------------------------------
-  const CLOUD_RUN_BASE_URL = "https://rental-analyzer-812042135518.asia-northeast3.run.app"; 
-
-  function onAnalysisSuccess(response) {
-    hideLoader();
-    if (!response.success) {
-      alert("❌ 분석 실패:\n" + response.error);
-      return;
-    }
-    let data = response.data;
-    if (Array.isArray(data)) data = data[0];
-    
-    if (!data || Object.keys(data).length === 0) {
-        alert("⚠️ 분석은 성공했으나 데이터가 비어있습니다.");
-        return;
-    }
-    alert("✅ 분석이 완료되었습니다.\n내용을 확인해주세요.");
-
-    const smartFill = (id, newVal) => {
-      const el = document.getElementById(id);
-      if (!el) return;
-      if (newVal === undefined || newVal === null || String(newVal).trim() === "") return;
-
-      const currentVal = el.value.trim();
-      const isPlaceholder = currentVal === '' || currentVal.includes('확인') || currentVal.includes('미정') || currentVal.includes('추정');
-      if (!isPlaceholder) return; 
-
-      const normalizeStr = (str) => String(str).normalize("NFC").replace(/\s+/g, '').toLowerCase();
-      const cleanNewVal = normalizeStr(newVal);
-
-      if (el.tagName.toUpperCase() === 'SELECT') {
-          let bestMatch = "";
-          for (let i = 0; i < el.options.length; i++) {
-              const optVal = el.options[i].value;
-              const optText = el.options[i].text;
-              const cleanOptVal = normalizeStr(optVal);
-              const cleanOptText = normalizeStr(optText);
-
-              if (cleanOptVal === cleanNewVal || cleanOptText === cleanNewVal ||
-                 (cleanOptVal.length > 0 && cleanNewVal.includes(cleanOptVal)) || 
-                 (cleanOptText.length > 0 && cleanNewVal.includes(cleanOptText))) {
-                  bestMatch = optVal;
-                  break;
-              }
-          }
-          if (bestMatch) {
-              el.value = bestMatch; 
-          } else {
-              let optExists = false;
-              for(let j=0; j<el.options.length; j++) {
-                  if(el.options[j].value == newVal) { optExists = true; break; }
-              }
-              if (!optExists) {
-                  const newOpt = document.createElement('option');
-                  newOpt.value = newVal;
-                  newOpt.text = newVal; 
-                  newOpt.style.color = "blue"; 
-                  el.add(newOpt);
-              }
-              el.value = newVal;
-          }
-          highlight(el);
-      } else {
-          el.value = newVal;
-          highlight(el);
-      }
-    };
-
-    const highlight = (el) => {
-        el.style.backgroundColor = "#d1e7dd"; 
-        setTimeout(() => el.style.backgroundColor = "", 3000);
-    };
-
-    smartFill('customerType', data.customer_type);
-    smartFill('gender', data.gender);
-    smartFill('ageGroup', data.age_group);
-    smartFill('addressCity', data.address_city);
-    smartFill('incomeType', data.income_type);
-    smartFill('creditInfo', data.credit_info);
-    smartFill('occupation', data.occupation);
-    
-    smartFill('interestedCarModel', data.interested_car_model);
-    smartFill('comparisonCarModel', data.comparison_car_model);
-    smartFill('ownedCarModel', data.owned_car_model);
-    smartFill('carUsage', data.car_usage);
-    smartFill('drivingDistance', data.driving_distance);
-    smartFill('driverScope', data.driver_scope);
-    smartFill('expectedContractTiming', data.expected_contract_timing);
-    smartFill('desiredContractTerm', data.desired_contract_term);
-    smartFill('desiredInitialCostType', data.desired_initial_cost_type);
-    smartFill('maintenanceServiceLevel', data.maintenance_service_level);
-
-    if (data.customer_phone) {
-        const formatted = typeof formatPhoneNumber_Client === 'function' ? formatPhoneNumber_Client(data.customer_phone) : data.customer_phone;
-        smartFill('detailCustomerPhoneNumber', formatted);
-    }
-
-    const memoEl = document.getElementById('customerMemo');
-    if (memoEl && data.summary) {
-      const currentMemo = memoEl.value;
-      if (!currentMemo.includes(data.summary)) {
-          const prefix = currentMemo ? " | " : "";
-          memoEl.value += prefix + "[AI요약] " + data.summary;
-          highlight(memoEl);
-      }
-    }
-
-    const logEl = document.getElementById('newLogContent');
-    if (logEl && data.summary) {
-      logEl.value = `[🎙️ 녹음 분석 결과]\n\n📄 핵심요약:\n${data.summary}\n\n📝 상세내용:\n${data.details || '(내용 없음)'}`;
-      highlight(logEl);
-      const addLogBtn = document.getElementById('addLogBtn');
-      if(addLogBtn) addLogBtn.focus();
-    }
-  }
-
-  // ★ [공통 함수] 파일 업로드 및 AI 분석 요청
-  async function uploadAndAnalyzeFile(file, analysisType) {
-    if (!file) return null;
-    
-    const fileId = `upload_${Date.now()}_${Math.floor(Math.random()*1000)}`;
-    const CHUNK_SIZE = 10 * 1024 * 1024; 
-    const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
-    
-    for (let i = 0; i < totalChunks; i++) {
-        const start = i * CHUNK_SIZE;
-        const end = Math.min(file.size, start + CHUNK_SIZE);
-        const chunk = file.slice(start, end);
+        if (currentFilters.searchTerm) {
+          const term = currentFilters.searchTerm;
+          const cleanTerm = term.replace(/-/g, ''); 
+          const searchConditions = [
+              `customer_name.ilike.%${term}%`,
+              `customer_phone.ilike.%${cleanTerm}%`, 
+              `customer_phone.ilike.%${term}%`,
+              `customer_memo.ilike.%${term}%`,
+              `interested_car_model.ilike.%${term}%`,
+              `comparison_car_model.ilike.%${term}%`,
+              `owned_car_model.ilike.%${term}%`,
+              `lead_source.ilike.%${term}%`,
+              `address_city.ilike.%${term}%`,
+              `occupation.ilike.%${term}%`,
+              `quote_number.ilike.%${term}%`,
+              `approval_number.ilike.%${term}%`,
+              `car_usage.ilike.%${term}%`,
+              `driver_scope.ilike.%${term}%`
+          ].join(',');
+          query = query.or(searchConditions);
+        }
         
-        const percent = Math.round(((i) / totalChunks) * 100);
-        setStatusMessage(`📡 파일 전송 중... ${percent}%`);
-
-        const formData = new FormData();
-        formData.append("file", chunk);
-        formData.append("file_id", fileId);
-        formData.append("chunk_index", i);
-
-        const res = await fetch(`${CLOUD_RUN_BASE_URL}/upload-chunk`, {
-            method: "POST",
-            body: formData
-        });
-        
-        if (!res.ok) throw new Error(`Chunk ${i} upload failed`);
-    }
-
-    setStatusMessage("🤖 AI가 문서를 분석 중입니다...");
-    
-    let mimeType = file.type;
-    if (!mimeType) mimeType = 'application/octet-stream';
-
-    const finalForm = new FormData();
-    finalForm.append("file_id", fileId);
-    finalForm.append("total_chunks", totalChunks);
-    finalForm.append("file_name", file.name);
-    finalForm.append("mime_type", mimeType);
-    finalForm.append("analysis_type", analysisType); 
-
-    const analyzeRes = await fetch(`${CLOUD_RUN_BASE_URL}/analyze-chunked`, {
-        method: "POST",
-        body: finalForm
-    });
-
-    const result = await analyzeRes.json();
-    if (!result.success) throw new Error(result.error);
-    
-    return result.data;
-  }
-
-  function setupContractAnalysisListener() {
-     // 이벤트는 Js_Ui.html에서 처리함
-  }
-
-  // ★ [계약 저장 및 구글 시트 전송 로직]
-  async function saveNewContractLogic() {
-    const date = document.getElementById('modalContractDate').value;
-    const car = document.getElementById('modalContractCarModel').value;
-    if(!date || !car) return alert('계약일과 차종은 필수입니다.');
-
-    const isProxy = document.getElementById('isDifferentContractor').checked;
-    const realName = document.getElementById('realContractorName').value.trim();
-    const realPhone = document.getElementById('realContractorPhone').value.trim().replace(/\D/g, "");
-    const relation = document.getElementById('contractorRelation').value;
-
-    if(isProxy && (!realName || !realPhone)) return alert('실계약자 이름과 연락처를 입력하세요.');
-
-    showLoader();
-    try {
-        let targetAssignmentId = currentAssignmentId;
-        let actualContractorId = currentAssignmentId;
-        let consultantId = currentAssignmentId;
-        let relationshipVal = '본인';
-        const nowISO = new Date().toISOString();
-
-        if (isProxy) {
-            relationshipVal = relation;
-            let memoSuffix = (relation !== '지인/소개') ? "타인명의 진행건" : "소개건";
-            const autoMemo = `[자동생성] ${document.getElementById('detailCustomerNameText').textContent}님의 ${memoSuffix}`;
-
-            const { data: existUser } = await supabase.from('customers').select('assignment_id').eq('customer_phone', realPhone).maybeSingle();
-            if (existUser) {
-                targetAssignmentId = existUser.assignment_id;
-                actualContractorId = existUser.assignment_id;
-                await supabase.from('customers').update({ last_log_date: nowISO, updated_at: nowISO }).eq('assignment_id', existUser.assignment_id);
-            } else {
-                const ts = Date.now();
-                const newId = "A_" + ts;
-                await supabase.from('customers').insert([{
-                    assignment_id: newId,
-                    customer_id: "C_" + ts,
-                    customer_name: realName,
-                    customer_phone: realPhone,
-                    assigned_to: currentUserName,
-                    owner_email: currentUserEmail,
-                    customer_status: '계약 완료',
-                    lead_source: relationshipVal,
-                    customer_memo: autoMemo,
-                    last_log_date: nowISO,
-                    updated_at: nowISO
-                }]);
-                targetAssignmentId = newId;
-                actualContractorId = newId;
-            }
+        if(currentFilters.status) query = query.eq('customer_status', currentFilters.status);
+        if(currentFilters.dbType) query = query.eq('db_type', currentFilters.dbType);
+        if(currentFilters.leadSource) query = query.eq('lead_source', currentFilters.leadSource);
+        if(currentFilters.dateFrom) query = query.gte('assignment_date', currentFilters.dateFrom);
+        if(currentFilters.dateTo) {
+          const d = new Date(currentFilters.dateTo); d.setDate(d.getDate()+1);
+          query = query.lt('assignment_date', d.toISOString());
         }
 
-        // [데이터 준비] 구글 시트 전송을 위해 객체에 담음
-        const contractData = {
-            contract_id: "CN_" + Date.now(),
-            assignment_id: targetAssignmentId, 
-            actual_contractor_id: actualContractorId,
-            consultant_id: consultantId,
-            relationship: relationshipVal,
-            contract_status: '진행중',
-            contract_date: date,
-            contract_car_model: car,
-            contract_amount: document.getElementById('modalContractAmount').value || 0,
-            contract_term: document.getElementById('modalContractTerm').value,
-            contract_summary: document.getElementById('modalContractSummary').value,
-            
-            product_name: document.getElementById('modalProductName').value,
-            exterior_color: document.getElementById('modalExteriorColor').value,
-            interior_color: document.getElementById('modalInteriorColor').value,
-            car_price: document.getElementById('modalCarPrice').value ? document.getElementById('modalCarPrice').value.replace(/,/g,'') : 0,
-            agreed_mileage: document.getElementById('modalAgreedMileage').value,
-            acquisition_price: document.getElementById('modalAcquisitionPrice').value,
-            deposit_info: document.getElementById('modalDepositInfo').value,
-            penalty_rate: document.getElementById('modalPenaltyRate').value,
-            maintenance_product: document.getElementById('modalMaintenanceProduct').value,
-            
-            // [추가된 필드]
-            commission: document.getElementById('modalCommission').value || 0,
-            input_date: document.getElementById('modalInputDate').value,
-            approval_number: document.getElementById('modalApprovalNumber').value,
-            contract_number: document.getElementById('modalContractNumber').value,
-            contract_receipt_date: document.getElementById('modalContractReceiptDate').value,
-            lead_source: document.getElementById('modalLeadSource').value
-        };
-
-        // 1. Supabase 저장
-        const { error } = await supabase.from('contracts').insert([contractData]);
+        const { data, count, error } = await query;
         if(error) throw error;
-
-
-        // =====================================================================================================================
-        // [수정 영역 1] 구글 시트 저장 기능 비활성화 (주석 처리)
-        // =======================================================================================================================
-        /* // 테스트 기간 동안 시트 저장을 막기 위해 주석 처리함
-        // 2. 구글 시트로 데이터 전송 (서버 사이드 함수 호출)
-        const customerName = document.getElementById('detailCustomerNameText').textContent; // B열
-        const sheetData = {
-            name: isProxy ? `${realName}(${customerName})` : customerName, // 실계약자(상담자) 형식
-            car: contractData.contract_car_model, // C열
-            manager: currentUserName, // D열
-            receiptDate: contractData.contract_receipt_date, // E열
-            leadSource: contractData.lead_source // G열
-        };
-
-        // 비동기로 시트 저장 요청 (사용자에게는 바로 성공 메시지 보여줌)
-        google.script.run
-            .withFailureHandler((err) => console.error("Sheet Export Error:", err))
-            .appendContractToSheet(sheetData);
-        */
-        // =======================================================================================================================
-
-
-        hideLoader();
-
-
-
-        // =======================================================================================================================
-        // [수정 영역 2] 메일 발송 팝업 기능 비활성화 (주석 처리)
-        // =======================================================================================================================
-        /*
-        // 테스트 기간 동안 메일 발송 팝업을 띄우지 않음
-        if (confirm("계약이 저장되었습니다.\n\n📧 바로 메일 작성 창을 띄우시겠습니까?")) {
-            openMailPopup(contractData, isProxy ? realName : customerName);
-        }
-        */
-        alert("✅ 계약이 저장되었습니다. (테스트 모드: 시트 저장 및 메일 발송 생략됨)");
-        // ==================================================================================================================
-
-        closeAddContractScreen(); 
-        selectCustomer(currentAssignmentId); 
         
-    } catch(e) { 
-        handleFailure(e); 
+        totalCustomerCount = count;
+        displayAssignedCustomers(data.map(toUiData), isNew);
+      } catch(e) {
+        handleFailure(e);
+      } finally {
+        hideLoader();
+      }
     }
-  }
 
-  // ★ [신규] 메일 발송 팝업 URL 생성 및 열기
-  function openMailPopup(data, contractorName) {
-    // 1. 메일 제목 및 본문 구성 (구글 시트 스크립트 로직을 JS로 구현)
-    const subjectParts = [
-       // 순서: 체크박스(x), 이름, 차종, 담당자, 계약접수, (공란), 유입경로, (공란), 계약일, 초기비용...
-       // 구글 시트의 열 순서와 메일 제목 구성 로직을 참고하여 조합
-       contractorName, 
-       data.contract_car_model, 
-       currentUserName, 
-       data.contract_receipt_date, 
-       data.lead_source, 
-       data.contract_date,
-       data.deposit_info, // 초기비용(보증금/선납금)
-       // ... 필요한 항목 추가
-    ];
-    
-    // 빈 값 제거 및 구분자로 연결
-    const mailSubject = subjectParts.filter(v => v).join(' / ');
+    // ----------------------------------------------------------------------------
+    // 4-2. 계약 목록 조회
+    // ----------------------------------------------------------------------------
+    async function fetchGlobalContracts(isNew = false) {
+      if (isNew) {
+        currentContractOffset = 0;
+      } else {
+        currentContractOffset += PAGE_SIZE;
+      }
 
-    // 2. 메일 본문 구성 (CONFIG.MAIL_CONFIG 참고)
-    const bodyTemplate = [
-      `계약자 : ${contractorName}`,
-      `계약일자 : ${data.contract_date}`,
-      `수수료 : ${Number(data.commission).toLocaleString()}원`,
-      `계약기간 : ${data.contract_term}개월`,
-      `차량가(취득원가) : ${Number(data.car_price).toLocaleString()}원`,
-      `월이용료 : ${Number(data.contract_amount).toLocaleString()}원`,
-      `보증금 : ${data.deposit_info}`,
-      `투입일자 : ${data.input_date}`,
-      `승인번호 : ${data.approval_number}`,
-      `계약번호 : ${data.contract_number}`,
-      "",
-      "\n\n========== 계약서 파일 꼭 첨부 확인부탁드립니다 ==========\n",
-      "",
-      // 추가 본문 텍스트 (구글 시트 스크립트 내용 복사)
-      `1️⃣ 고객 상황
-👉 왜 차를 알아보셨는지 / 어떤 고민이 있었는지
-(예: 첫 차, 업무용, 초기비용 부담, 신용문제, 보험/정비 걱정 등)
+      showLoader();
+      try {
+        let query = supabase
+          .from('contracts')
+          .select('*, customers!inner(customer_name, customer_phone, assigned_to, db_type)')
+          .eq('customers.assigned_to', currentUserName)
+          .order('contract_date', { ascending: false });
+
+        const statusEl = document.getElementById('filterContractStatus');
+        const termEl = document.getElementById('contractSearchTerm');
+        const dateEl = document.getElementById('filterContractDateFrom');
+        
+        const receiptEl = document.getElementById('filterContractReceiptSource');
+        const leadEl = document.getElementById('filterContractLeadSource');
+        
+        if (statusEl && statusEl.value) query = query.eq('contract_status', statusEl.value);
+        if (termEl && termEl.value) query = query.ilike('contract_car_model', `%${termEl.value}%`);
+        if (dateEl && dateEl.value) query = query.gte('contract_date', dateEl.value);
+        
+        if (receiptEl && receiptEl.value) query = query.eq('contract_receipt_source', receiptEl.value);
+        if (leadEl && leadEl.value) query = query.eq('lead_source', leadEl.value);
+
+        const { data, count, error } = await query; 
+        if (error) throw error;
+
+        if (isNew) {
+            renderGlobalContracts(data, true); 
+        } else {
+            renderGlobalContracts(data, false);
+        }
+      } catch (e) {
+        handleFailure(e);
+      } finally {
+        hideLoader();
+      }
+    }
+
+    // ----------------------------------------------------------------------------
+    // 4-3. 단일 고객 상세 조회
+    // ----------------------------------------------------------------------------
+    async function selectCustomer(id) {
+      showLoader();
+      try {
+        const { data: cust, error: e1 } = await supabase.from('customers').select('*').eq('assignment_id', id).maybeSingle();
+        if (e1) throw e1;
+        if (!cust) throw new Error("삭제되었거나 존재하지 않는 고객입니다.");
+        
+        const { data: logs, error: e2 } = await supabase.from('consultation_logs').select('*').eq('assignment_id', id).order('log_timestamp', {ascending:false});
+        if(e2) throw e2;
+
+        const { data: contracts, error: e3 } = await supabase.from('contracts')
+          .select('*, customers(customer_name)') 
+          .or(`assignment_id.eq.${id},consultant_id.eq.${id}`)
+          .order('contract_date', {ascending:false});
+        if(e3) throw e3;
+
+        document.getElementById('listPanel').classList.add('hidden');
+        if(document.getElementById('contractListPanel')) document.getElementById('contractListPanel').classList.add('hidden');
+        const contractPanel = document.getElementById('contractDetailPanel');
+        if(contractPanel) contractPanel.classList.add('hidden');
+
+        document.getElementById('customerDetailPanel').classList.remove('hidden');
+
+        displayAssignmentDetails({ assignment: toUiData(cust) });
+        
+        renderLogs(logs.map(l => ({ 
+            logId: l.log_id, 
+            logTimestamp: l.log_timestamp, 
+            logContent: l.log_content,
+            userName: l.user_name 
+        })));
+        renderContracts(contracts);
+
+      } catch(e) {
+        handleFailure(e);
+      } finally {
+        hideLoader();
+      }
+    }
+
+    // ----------------------------------------------------------------------------
+    // 4-4. 상담 로그 관리
+    // ----------------------------------------------------------------------------
+    async function deleteLog(logId) {
+      if (!confirm("정말 이 상담 기록을 삭제하시겠습니까?")) return;
+      showLoader();
+      const { error } = await supabase.from('consultation_logs').delete().eq('log_id', logId);
+      hideLoader();
+      if (error) alert("삭제 실패: " + error.message);
+      else if(currentAssignmentId) selectCustomer(currentAssignmentId);
+    }
+
+    async function editLog(logId, btnElement) {
+      const contentDiv = document.getElementById(`content-${logId}`);
+      const currentContent = contentDiv.textContent;
+      const card = btnElement.closest('.log-entry-card');
+      const actionsDiv = btnElement.closest('.log-actions');
+      if (card.querySelector('textarea')) return;
+
+      contentDiv.style.display = 'none';
+      actionsDiv.style.display = 'none';
+
+      const editorDiv = document.createElement('div');
+      editorDiv.innerHTML = `
+          <textarea style="width:100%; height:100px; margin:5px 0; border:1px solid #ccc; padding:5px;">${currentContent}</textarea>
+          <div style="text-align:right; gap:5px; display:flex; justify-content:flex-end;">
+              <button id="save-${logId}" style="padding:4px 10px; font-size:0.8rem;">저장</button>
+              <button id="cancel-${logId}" class="secondary" style="padding:4px 10px; font-size:0.8rem;">취소</button>
+          </div>
+      `;
+      card.appendChild(editorDiv);
+
+      document.getElementById(`save-${logId}`).onclick = async () => {
+          const newText = editorDiv.querySelector('textarea').value;
+          if (!newText.trim()) return alert("내용을 입력하세요.");
+          showLoader();
+          const { error } = await supabase.from('consultation_logs').update({ log_content: newText }).eq('log_id', logId);
+          hideLoader();
+          if (error) alert("수정 실패: " + error.message);
+          else if(currentAssignmentId) selectCustomer(currentAssignmentId);
+      };
+
+      document.getElementById(`cancel-${logId}`).onclick = () => {
+          editorDiv.remove();
+          contentDiv.style.display = 'block';
+          actionsDiv.style.display = 'flex';
+      };
+    }
+
+    // ----------------------------------------------------------------------------
+    // 4-5. Cloud Run AI 분석
+    // ----------------------------------------------------------------------------
+    const CLOUD_RUN_BASE_URL = "https://rental-analyzer-812042135518.asia-northeast3.run.app"; 
+
+    function onAnalysisSuccess(response) {
+      hideLoader();
+      if (!response.success) {
+        alert("❌ 분석 실패:\n" + response.error);
+        return;
+      }
+      let data = response.data;
+      if (Array.isArray(data)) data = data[0];
+      
+      if (!data || Object.keys(data).length === 0) {
+          alert("⚠️ 분석은 성공했으나 데이터가 비어있습니다.");
+          return;
+      }
+      alert("✅ 분석이 완료되었습니다.\n내용을 확인해주세요.");
+
+      const smartFill = (id, newVal) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        if (newVal === undefined || newVal === null || String(newVal).trim() === "") return;
+
+        const currentVal = el.value.trim();
+        const isPlaceholder = currentVal === '' || currentVal.includes('확인') || currentVal.includes('미정') || currentVal.includes('추정');
+        if (!isPlaceholder) return; 
+
+        const normalizeStr = (str) => String(str).normalize("NFC").replace(/\s+/g, '').toLowerCase();
+        const cleanNewVal = normalizeStr(newVal);
+
+        if (el.tagName.toUpperCase() === 'SELECT') {
+            let bestMatch = "";
+            for (let i = 0; i < el.options.length; i++) {
+                const optVal = el.options[i].value;
+                const optText = el.options[i].text;
+                const cleanOptVal = normalizeStr(optVal);
+                const cleanOptText = normalizeStr(optText);
+
+                if (cleanOptVal === cleanNewVal || cleanOptText === cleanNewVal ||
+                  (cleanOptVal.length > 0 && cleanNewVal.includes(cleanOptVal)) || 
+                  (cleanOptText.length > 0 && cleanNewVal.includes(cleanOptText))) {
+                    bestMatch = optVal;
+                    break;
+                }
+            }
+            if (bestMatch) {
+                el.value = bestMatch; 
+            } else {
+                let optExists = false;
+                for(let j=0; j<el.options.length; j++) {
+                    if(el.options[j].value == newVal) { optExists = true; break; }
+                }
+                if (!optExists) {
+                    const newOpt = document.createElement('option');
+                    newOpt.value = newVal;
+                    newOpt.text = newVal; 
+                    newOpt.style.color = "blue"; 
+                    el.add(newOpt);
+                }
+                el.value = newVal;
+            }
+            highlight(el);
+        } else {
+            el.value = newVal;
+            highlight(el);
+        }
+      };
+
+      const highlight = (el) => {
+          el.style.backgroundColor = "#d1e7dd"; 
+          setTimeout(() => el.style.backgroundColor = "", 3000);
+      };
+
+      smartFill('customerType', data.customer_type);
+      smartFill('gender', data.gender);
+      smartFill('ageGroup', data.age_group);
+      smartFill('addressCity', data.address_city);
+      smartFill('incomeType', data.income_type);
+      smartFill('creditInfo', data.credit_info);
+      smartFill('occupation', data.occupation);
+      
+      smartFill('interestedCarModel', data.interested_car_model);
+      smartFill('comparisonCarModel', data.comparison_car_model);
+      smartFill('ownedCarModel', data.owned_car_model);
+      smartFill('carUsage', data.car_usage);
+      smartFill('drivingDistance', data.driving_distance);
+      smartFill('driverScope', data.driver_scope);
+      smartFill('expectedContractTiming', data.expected_contract_timing);
+      smartFill('desiredContractTerm', data.desired_contract_term);
+      smartFill('desiredInitialCostType', data.desired_initial_cost_type);
+      smartFill('maintenanceServiceLevel', data.maintenance_service_level);
+
+      if (data.customer_phone) {
+          const formatted = typeof formatPhoneNumber_Client === 'function' ? formatPhoneNumber_Client(data.customer_phone) : data.customer_phone;
+          smartFill('detailCustomerPhoneNumber', formatted);
+      }
+
+      const memoEl = document.getElementById('customerMemo');
+      if (memoEl && data.summary) {
+        const currentMemo = memoEl.value;
+        if (!currentMemo.includes(data.summary)) {
+            const prefix = currentMemo ? " | " : "";
+            memoEl.value += prefix + "[AI요약] " + data.summary;
+            highlight(memoEl);
+        }
+      }
+
+      const logEl = document.getElementById('newLogContent');
+      if (logEl && data.summary) {
+        logEl.value = `[🎙️ 녹음 분석 결과]\n\n📄 핵심요약:\n${data.summary}\n\n📝 상세내용:\n${data.details || '(내용 없음)'}`;
+        highlight(logEl);
+        const addLogBtn = document.getElementById('addLogBtn');
+        if(addLogBtn) addLogBtn.focus();
+      }
+    }
+
+    // ★ [공통 함수] 파일 업로드 및 AI 분석 요청
+    async function uploadAndAnalyzeFile(file, analysisType) {
+      if (!file) return null;
+      
+      const fileId = `upload_${Date.now()}_${Math.floor(Math.random()*1000)}`;
+      const CHUNK_SIZE = 10 * 1024 * 1024; 
+      const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+      
+      for (let i = 0; i < totalChunks; i++) {
+          const start = i * CHUNK_SIZE;
+          const end = Math.min(file.size, start + CHUNK_SIZE);
+          const chunk = file.slice(start, end);
+          
+          const percent = Math.round(((i) / totalChunks) * 100);
+          setStatusMessage(`📡 파일 전송 중... ${percent}%`);
+
+          const formData = new FormData();
+          formData.append("file", chunk);
+          formData.append("file_id", fileId);
+          formData.append("chunk_index", i);
+
+          const res = await fetch(`${CLOUD_RUN_BASE_URL}/upload-chunk`, {
+              method: "POST",
+              body: formData
+          });
+          
+          if (!res.ok) throw new Error(`Chunk ${i} upload failed`);
+      }
+
+      setStatusMessage("🤖 AI가 문서를 분석 중입니다...");
+      
+      let mimeType = file.type;
+      if (!mimeType) mimeType = 'application/octet-stream';
+
+      const finalForm = new FormData();
+      finalForm.append("file_id", fileId);
+      finalForm.append("total_chunks", totalChunks);
+      finalForm.append("file_name", file.name);
+      finalForm.append("mime_type", mimeType);
+      finalForm.append("analysis_type", analysisType); 
+
+      const analyzeRes = await fetch(`${CLOUD_RUN_BASE_URL}/analyze-chunked`, {
+          method: "POST",
+          body: finalForm
+      });
+
+      const result = await analyzeRes.json();
+      if (!result.success) throw new Error(result.error);
+      
+      return result.data;
+    }
+
+    function setupContractAnalysisListener() {
+      // 이벤트는 Js_Ui.html에서 처리함
+    }
+
+    // ★ [계약 저장 및 구글 시트 전송 로직]
+    async function saveNewContractLogic() {
+      const date = document.getElementById('modalContractDate').value;
+      const car = document.getElementById('modalContractCarModel').value;
+      if(!date || !car) return alert('계약일과 차종은 필수입니다.');
+
+      const isProxy = document.getElementById('isDifferentContractor').checked;
+      const realName = document.getElementById('realContractorName').value.trim();
+      const realPhone = document.getElementById('realContractorPhone').value.trim().replace(/\D/g, "");
+      const relation = document.getElementById('contractorRelation').value;
+
+      if(isProxy && (!realName || !realPhone)) return alert('실계약자 이름과 연락처를 입력하세요.');
+
+      // [신규] 숫자 변환 헬퍼 (빈 값은 0으로 처리)
+      const safeNum = (val) => {
+          if(!val) return 0;
+          return Number(String(val).replace(/,/g, '')) || 0;
+      };
+      
+      // [신규] 정수 변환 헬퍼
+      const safeInt = (val) => {
+          if(!val) return 0;
+          return parseInt(String(val).replace(/,/g, ''), 10) || 0;
+      };
+
+      showLoader();
+      try {
+          let targetAssignmentId = currentAssignmentId;
+          let actualContractorId = currentAssignmentId;
+          let consultantId = currentAssignmentId;
+          let relationshipVal = '본인';
+          const nowISO = new Date().toISOString();
+
+          const { data: hostCustomer } = await supabase
+              .from('customers')
+              .select('db_type, lead_source')
+              .eq('assignment_id', currentAssignmentId)
+              .single();
+
+          if (isProxy) {
+              relationshipVal = relation;
+              let memoSuffix = (relation !== '지인/소개') ? "타인명의 진행건" : "소개건";
+              const currentCustName = document.getElementById('detailCustomerNameText').textContent;
+              const autoMemo = `[자동생성] ${currentCustName}님의 ${memoSuffix}`;
+
+              const { data: existUser } = await supabase.from('customers').select('assignment_id').eq('customer_phone', realPhone).maybeSingle();
+              if (existUser) {
+                  targetAssignmentId = existUser.assignment_id;
+                  actualContractorId = existUser.assignment_id;
+                  await supabase.from('customers').update({ last_log_date: nowISO, updated_at: nowISO }).eq('assignment_id', existUser.assignment_id);
+              } else {
+                  const ts = Date.now();
+                  const newId = "A_" + ts;
+                  
+                  await supabase.from('customers').insert([{
+                      assignment_id: newId,
+                      customer_id: "C_" + ts,
+                      customer_name: realName,
+                      customer_phone: realPhone,
+                      assigned_to: currentUserName,
+                      owner_email: currentUserEmail,
+                      customer_status: '계약 완료',
+                      
+                      db_type: hostCustomer ? hostCustomer.db_type : '',
+                      lead_source: hostCustomer ? hostCustomer.lead_source : '',
+                      
+                      customer_memo: autoMemo,
+                      last_log_date: nowISO,
+                      updated_at: nowISO
+                  }]);
+                  targetAssignmentId = newId;
+                  actualContractorId = newId;
+              }
+          }
+
+          const contractData = {
+              contract_id: "CN_" + Date.now(),
+              assignment_id: targetAssignmentId, 
+              actual_contractor_id: actualContractorId,
+              consultant_id: consultantId,
+              relationship: relationshipVal,
+              contract_status: '진행중',
+              contract_date: date,
+              contract_car_model: car,
+              
+              // [수정] 안전한 숫자 변환 적용
+              contract_amount: safeNum(document.getElementById('modalContractAmount').value),
+              contract_term: safeInt(document.getElementById('modalContractTerm').value),
+              
+              contract_summary: document.getElementById('modalContractSummary').value,
+              product_name: document.getElementById('modalProductName').value,
+              exterior_color: document.getElementById('modalExteriorColor').value,
+              interior_color: document.getElementById('modalInteriorColor').value,
+              
+              car_price: safeNum(document.getElementById('modalCarPrice').value),
+              agreed_mileage: document.getElementById('modalAgreedMileage').value,
+              acquisition_price: safeNum(document.getElementById('modalAcquisitionPrice').value),
+              
+              deposit_info: document.getElementById('modalDepositInfo').value,
+              penalty_rate: document.getElementById('modalPenaltyRate').value,
+              maintenance_product: document.getElementById('modalMaintenanceProduct').value,
+              
+              // [수정] 안전한 숫자 변환 적용 (특히 수수료 부분)
+              commission: safeNum(document.getElementById('modalCommission').value),
+              
+              input_date: document.getElementById('modalInputDate').value,
+              approval_number: document.getElementById('modalApprovalNumber').value,
+              contract_number: document.getElementById('modalContractNumber').value,
+              
+              contract_receipt_source: document.getElementById('modalContractReceiptSource').value,
+              lead_source: document.getElementById('modalLeadSource').value
+          };
+
+          const { error } = await supabase.from('contracts').insert([contractData]);
+          if(error) throw error;
+
+          hideLoader();
+          alert("✅ 계약이 저장되었습니다.");
+
+          closeAddContractScreen(); 
+          selectCustomer(currentAssignmentId); 
+          
+      } catch(e) { 
+          handleFailure(e); 
+      }
+    }
+
+    // ★ [신규] 메일 발송 팝업 URL 생성 및 열기
+    function openMailPopup(data, contractorName) {
+      const subjectParts = [
+        contractorName, 
+        data.contract_car_model, 
+        currentUserName, 
+        data.contract_receipt_source, 
+        data.lead_source, 
+        data.contract_date,
+        data.deposit_info
+      ];
+      
+      const mailSubject = subjectParts.filter(v => v).join(' / ');
+
+      const bodyTemplate = [
+        `계약자 : ${contractorName}`,
+        `계약일자 : ${data.contract_date}`,
+        `수수료 : ${Number(data.commission).toLocaleString()}원`,
+        `계약기간 : ${data.contract_term}개월`,
+        `차량가(취득원가) : ${Number(data.car_price).toLocaleString()}원`,
+        `월이용료 : ${Number(data.contract_amount).toLocaleString()}원`,
+        `보증금 : ${data.deposit_info}`,
+        `투입일자 : ${data.input_date}`,
+        `승인번호 : ${data.approval_number}`,
+        `계약번호 : ${data.contract_number}`,
+        "",
+        "\n\n========== 계약서 파일 꼭 첨부 확인부탁드립니다 ==========\n",
+        "",
+        `1️⃣ 고객 상황
+  👉 왜 차를 알아보셨는지 / 어떤 고민이 있었는지
+  (예: 첫 차, 업무용, 초기비용 부담, 신용문제, 보험/정비 걱정 등)
 
 
-____________________________________________________________
+  ____________________________________________________________
 
-2️⃣ 차량 & 상품 선택 이유
-👉 어떤 차량을 선택했고, 어떤 상품으로 진행했는지
-(예: 쏘렌토 하이브리드 인수형 / 위약금 부담 없음 / 정비 포함이라 선택)
-
-
-____________________________________________________________
-
-3️⃣ 진행 및 출고 과정
-👉 승인·계약·출고 과정 중 고객이 편리해하거나 만족한 부분
-(예: 서류 간단 / 보증금 없음 / 빠른 출고 / 친절한 안내 등)
+  2️⃣ 차량 & 상품 선택 이유
+  👉 어떤 차량을 선택했고, 어떤 상품으로 진행했는지
+  (예: 쏘렌토 하이브리드 인수형 / 위약금 부담 없음 / 정비 포함이라 선택)
 
 
-____________________________________________________________
+  ____________________________________________________________
 
-4️⃣ 고객 반응 & 만족 포인트
-👉 고객이 실제로 표현한 만족도나 한마디
-(예: “이렇게 쉽게 될 줄 몰랐다”, “정비 걱정 없어 좋다”)
-
-
-____________________________________________________________
-
-5️⃣ 동료 감사 한 줄
-👉 계약 과정에서 도움 준 동료나 팀에게 감사 표현
-(예: “승인과정 도와주신 ㅇㅇ팀장님 감사합니다!”)
+  3️⃣ 진행 및 출고 과정
+  👉 승인·계약·출고 과정 중 고객이 편리해하거나 만족한 부분
+  (예: 서류 간단 / 보증금 없음 / 빠른 출고 / 친절한 안내 등)
 
 
-____________________________________________________________`
-    ].join('\n');
+  ____________________________________________________________
 
-    // 3. URL 생성
-    const baseUrl = "https://mail.worksmobile.com/write/popup";
-    const recipient = "문정동사서함 <automedia@automediarentcar.com>";
-    
-    const mailUrl = `${baseUrl}?to=${encodeURIComponent(recipient)}&orderType=new&memo=false&subject=${encodeURIComponent(mailSubject)}&body=${encodeURIComponent(bodyTemplate)}`;
+  4️⃣ 고객 반응 & 만족 포인트
+  👉 고객이 실제로 표현한 만족도나 한마디
+  (예: “이렇게 쉽게 될 줄 몰랐다”, “정비 걱정 없어 좋다”)
 
-    // 4. 새 창 열기
-    window.open(mailUrl, '_blank');
-  }
+
+  ____________________________________________________________
+
+  5️⃣ 동료 감사 한 줄
+  👉 계약 과정에서 도움 준 동료나 팀에게 감사 표현
+  (예: “승인과정 도와주신 ㅇㅇ팀장님 감사합니다!”)
+
+
+  ____________________________________________________________`
+      ].join('\n');
+
+      const baseUrl = "https://mail.worksmobile.com/write/popup";
+      const recipient = "문정동사서함 <automedia@automediarentcar.com>";
+      
+      const mailUrl = `${baseUrl}?to=${encodeURIComponent(recipient)}&orderType=new&memo=false&subject=${encodeURIComponent(mailSubject)}&body=${encodeURIComponent(bodyTemplate)}`;
+
+      window.open(mailUrl, '_blank');
+    }
+
