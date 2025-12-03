@@ -1,4 +1,5 @@
-// ============================================================================
+
+  // ============================================================================
   // [Js_Ui.html]
   // ============================================================================
   
@@ -43,43 +44,93 @@
   }
 
   async function populateSelectOptions() {
-    const { data: dbTypeData } = await supabase.from('db_types').select('type_name').eq('is_active', true).order('sort_order', { ascending: true });
-    let dbTypes = dbTypeData ? dbTypeData.map(i => i.type_name) : ['기타'];
-    
     const populate = (id, opts) => {
       const el = document.getElementById(id);
       if (!el || el.tagName !== 'SELECT') return;
-      const first = el.options[0]; el.innerHTML = ''; if (first) el.appendChild(first);
-      opts.forEach(v => { const op = document.createElement('option'); op.value = v; op.textContent = v; el.appendChild(op); });
+      
+      if(id.startsWith('filter')) {
+           el.innerHTML = '<option value="">전체</option>';
+      } else {
+           el.innerHTML = '<option value=""></option>';
+      }
+
+      if(opts) { 
+          opts.forEach(v => { 
+            const op = document.createElement('option'); 
+            op.value = v; 
+            op.textContent = v; 
+            el.appendChild(op); 
+          });
+      }
     };
 
-    populate('filterDbType', dbTypes);
-    populate('newDbType', dbTypes);
-
     const opts = CONFIG.selectOptions;
-    populate('leadSource', opts.leadSource);
-    populate('ageGroup', opts.ageGroup);
-    populate('incomeType', opts.incomeType);
-    populate('creditInfo', opts.creditInfo);
-    populate('carUsage', opts.carUsage);
-    populate('drivingDistance', opts.drivingDistance);
-    populate('expectedContractTiming', opts.expectedContractTiming);
-    populate('desiredContractTerm', opts.desiredContractTerm);
-    populate('desiredInitialCostType', opts.desiredInitialCostType);
-    populate('maintenanceServiceLevel', opts.maintenanceServiceLevel);
-    populate('customerStatus', opts.customerStatus);
 
+    // 1. DB 유형
+    const dbTypeList = opts.dbTypes || [];
+    populate('filterDbType', dbTypeList);
+    populate('newDbType', dbTypeList);
+    populate('detailDbType', dbTypeList);
+
+    // 2. 유입 경로
+    const { data: dbData } = await supabase.from('db_types').select('type_name').eq('is_active', true).order('sort_order', { ascending: true });
+    const leadSourceList = dbData ? dbData.map(i => i.type_name) : [];
+    
+    populate('filterLeadSource', leadSourceList);
+    populate('leadSource', leadSourceList);
+    populate('newLeadSource', leadSourceList);
+    populate('filterContractLeadSource', leadSourceList);
+    populate('modalLeadSource', leadSourceList);
+
+    // 3. 계약 접수처
+    const receiptSources = opts.contractReceiptSource || [];
+    populate('filterContractReceiptSource', receiptSources);
+    populate('modalContractReceiptSource', receiptSources);
+
+    // 4. 계약 진행 상태
+    const contStatusList = opts.contractStatus || [];
+    populate('filterContractStatus', contStatusList);
+    populate('detailContractStatus', contStatusList);
+
+    // 5. 고객 진행 상태
+    populate('filterCustomerStatus', opts.customerStatus);
+
+    // 6. 지역
+    populate('addressCity', opts.addressCities);
+
+    // 7. 나머지 항목들
     Object.keys(opts).forEach(key => {
+        if(['dbTypes', 'contractReceiptSource', 'addressCities', 'contractStatus'].includes(key)) return;
         populate(key, opts[key]);
     });
-    populate('filterCustomerStatus', opts.customerStatus);
-    populate('addressCity', opts.addressCities);
   }
 
   function getStatusClass(status) {
-    if (status === '상담 완료') return 'completed';
-    if (status === '상담 진행 중' || status === '연락 시도 중') return 'consulting';
-    return '';
+    if (!status) return '';
+    
+    // 1. 성공/완료 -> 초록색
+    const successList = ['계약 완료', '출고 완료', '이용중', '상담 완료', '심사 완료'];
+    if (successList.includes(status)) return 'success';
+    
+    // 2. 진행중/대기 -> 노란/주황색
+    const warningList = ['상담 진행 중', '연락 시도 중', '진행중', '견적 발송', '추가 정보 요청', '심사 진행중', '출고 대기'];
+    if (warningList.includes(status)) return 'warning';
+    
+    // 3. 위험/취소 -> 빨간색
+    const dangerList = ['취소', '중도 해지', '상담 이탈', '상담 보류', '조기 반납', '심사 부결', '취소/해지'];
+    if (dangerList.includes(status)) return 'danger';
+    
+    // 4. 정보/승인 -> 파란색
+    // [수정] '배정됨'을 여기서 제거하고 darkList로 이동
+    const infoList = ['가망 고객', '심사 승인'];
+    if (infoList.includes(status)) return 'info';
+    
+    // 5. 종료/만기/배정 -> 짙은 회색
+    // [수정] '배정됨'을 여기에 추가하여 회색으로 표시
+    const darkList = ['만기 반납', '만기 인계', '기존 고객', '배정됨'];
+    if (darkList.includes(status)) return 'dark';
+
+    return ''; 
   }
 
   function displayAssignedCustomers(customers, isNew) {
@@ -105,8 +156,9 @@
         const lastLogStr = c.lastLogDate ? formatDate(c.lastLogDate) : '-';
 
         li.innerHTML = `
-          <span class="col-db">${escapeHtml(c.dbType)}</span>
           <span class="col-status"><span class="status-badge ${statusClass}">${escapeHtml(c.customerStatus)}</span></span>
+          <span class="col-db">${escapeHtml(c.dbType)}</span>
+          <span class="col-source" title="${escapeHtml(c.leadSource)}">${escapeHtml(c.leadSource)}</span>
           <span class="col-name" title="${escapeHtml(c.customerName)}">${escapeHtml(c.customerName)}</span>
           <span class="col-phone">${escapeHtml(formatPhoneNumber_Client(c.customerPhoneNumber))}</span>
           <span class="col-memo" title="${escapeHtml(combinedMemo)}">${escapeHtml(combinedMemo)}</span>
@@ -162,8 +214,6 @@
     setVal('desiredContractTerm', data.desiredContractTerm);
     setVal('desiredInitialCostType', data.desiredInitialCostType);
     setVal('maintenanceServiceLevel', data.maintenanceServiceLevel);
-    setVal('isRepurchase', data.isRepurchase);
-    setVal('paymentMethod', data.paymentMethod);
     setVal('customerStatus', data.customerStatus);
     setVal('customerMemo', data.customerMemo);
     setVal('quoteNumber', data.quoteNumber);
@@ -194,7 +244,7 @@
           buttonsHtml = `
             <div class="log-actions" style="display:flex; gap:8px; margin-top:8px; justify-content:flex-end;">
                 <button onclick="editLog('${l.logId}', this)" class="secondary" style="padding:2px 8px; font-size:0.8rem;">수정</button>
-                <button onclick="deleteLog('${l.logId}')" class="secondary" style="padding:2px 8px; font-size:0.8rem; background:#dc3545; border:none;">삭제</button>
+                <button class="secondary" disabled style="padding:2px 8px; font-size:0.8rem; background:#ccc; cursor:not-allowed;">삭제</button>
             </div>
           `;
       }
@@ -230,11 +280,13 @@
       const cDate = formatDate(c.contract_date);
       const cModel = c.contract_car_model || '-';
       const cStatus = c.contract_status || '-';
+      // [수정] 계약 이력(미니 리스트)에도 색상 적용
+      const statusClass = getStatusClass(cStatus);
       
       li.innerHTML = `
         <span class="col-cont-date" style="flex:0 0 90px;">${cDate}</span>
         <span class="col-cont-car" style="flex:1; padding-left:10px;" title="${escapeHtml(cModel)}">${escapeHtml(cModel)}</span>
-        <span class="col-cont-status" style="flex:0 0 80px;"><span class="status-badge">${escapeHtml(cStatus)}</span></span>
+        <span class="col-cont-status" style="flex:0 0 80px;"><span class="status-badge ${statusClass}">${escapeHtml(cStatus)}</span></span>
       `;
       ul.appendChild(li);
     });
@@ -255,18 +307,26 @@
 
     contracts.forEach(c => {
         const custName = (c.customers && c.customers.customer_name) ? c.customers.customer_name : '(미확인)';
+        const dbType = (c.customers && c.customers.db_type) ? c.customers.db_type : '-';
         const cDate = formatDate(c.contract_date);
         const cStatus = c.contract_status || '-';
+        
+        // [수정] 계약 목록에도 색상 로직 적용 (누락되었던 부분)
+        const statusClass = getStatusClass(cStatus);
 
         const row = document.createElement('div');
         row.className = 'contract-row';
         row.onclick = () => viewContractDetail(c, 'contract_list');
 
         row.innerHTML = `
+          <span class="col-cont-status"><span class="status-badge ${statusClass}">${escapeHtml(cStatus)}</span></span>
           <span class="col-cont-date">${cDate}</span>
-          <span class="col-cont-car">${escapeHtml(c.contract_car_model)}</span>
+          <span class="col-cont-term">${escapeHtml(c.contract_term)}</span>
           <span class="col-cont-cust">${escapeHtml(custName)}</span>
-          <span class="col-cont-status"><span class="status-badge">${escapeHtml(cStatus)}</span></span>
+          <span class="col-cont-car" title="${escapeHtml(c.contract_car_model)}">${escapeHtml(c.contract_car_model)}</span>
+          <span class="col-cont-receipt">${escapeHtml(c.contract_receipt_source)}</span>
+          <span class="col-cont-source">${escapeHtml(c.lead_source)}</span>
+          <span class="col-cont-db">${escapeHtml(dbType)}</span>
         `;
         div.appendChild(row);
     });
@@ -292,14 +352,39 @@
 
     const setTxt = (id, txt) => {
         const el = document.getElementById(id);
-        if(el) el.textContent = txt || '-';
+        if(el) el.textContent = (txt === undefined || txt === null || txt === '') ? '-' : txt;
     };
+
+    const setVal = (id, val) => {
+        const el = document.getElementById(id);
+        if(el) el.value = val || '';
+    };
+
+    const formatMoney = (val) => val ? Number(val).toLocaleString() + '원' : '0원';
+
+    setVal('detailContractStatus', contractData.contract_status);
 
     setTxt('viewContStatus', contractData.contract_status);
     setTxt('viewContDate', formatDate(contractData.contract_date));
     setTxt('viewContCar', contractData.contract_car_model);
-    setTxt('viewContAmount', contractData.contract_amount ? Number(contractData.contract_amount).toLocaleString() + '원' : '0원');
-    setTxt('viewContTerm', contractData.contract_term);
+    setTxt('viewContProductName', contractData.product_name);
+    setTxt('viewContTerm', contractData.contract_term ? contractData.contract_term + '개월' : '-');
+    setTxt('viewContAmount', formatMoney(contractData.contract_amount));
+    
+    setTxt('viewContCarPrice', formatMoney(contractData.car_price));
+    setTxt('viewContColors', `${contractData.exterior_color || '-'} / ${contractData.interior_color || '-'}`);
+    setTxt('viewContDeposit', contractData.deposit_info);
+    setTxt('viewContAcquisition', contractData.acquisition_price ? formatMoney(contractData.acquisition_price) : '-');
+    setTxt('viewContMileage', contractData.agreed_mileage);
+    setTxt('viewContMaintPenalty', `${contractData.maintenance_product || '-'} / ${contractData.penalty_rate || '-'}`);
+
+    setTxt('viewContNumber', contractData.contract_number);
+    setTxt('viewContApproval', contractData.approval_number);
+    setTxt('viewContInputDate', contractData.input_date);
+    setTxt('viewContReceiptSource', contractData.contract_receipt_source || contractData.contract_receipt_date); 
+    setTxt('viewContLeadSource', contractData.lead_source);
+    setTxt('viewContCommission', formatMoney(contractData.commission));
+
     setTxt('viewContSummary', contractData.contract_summary);
     
     const realContractorName = (contractData.customers && contractData.customers.customer_name) 
@@ -347,17 +432,15 @@
     const contractPanel = document.getElementById('contractListPanel');
     const custDetailPanel = document.getElementById('customerDetailPanel');
     const contDetailPanel = document.getElementById('contractDetailPanel');
-    const addContractPanel = document.getElementById('addContractPanel'); // ★ [추가] 요소 가져오기
+    const addContractPanel = document.getElementById('addContractPanel');
     
-    // 모든 상세/입력 패널 숨기기 (초기화)
     custDetailPanel.classList.add('hidden');
     contDetailPanel.classList.add('hidden');
-    if(addContractPanel) addContractPanel.classList.add('hidden'); // ★ [추가] 계약 추가 패널도 강제로 숨김
+    if(addContractPanel) addContractPanel.classList.add('hidden');
     
     const btnCust = document.getElementById('tabCustomerBtn');
     const btnCont = document.getElementById('tabContractBtn');
 
-    // 탭 전환 시 진입 경로 정보 초기화
     window.customerDetailSource = null;
     currentContractSource = 'contract_list';
 
@@ -376,7 +459,6 @@
     }
   }
 
-  // [신규] 계약 추가 화면 제어 함수들
   function openAddContractScreen(source) {
     window.contractAddSource = source; 
     if (!currentAssignmentId) {
@@ -384,7 +466,6 @@
         return; 
     }
     
-    // 입력폼 초기화
     document.getElementById('isDifferentContractor').checked = false;
     document.getElementById('realContractorForm').classList.add('hidden');
     
@@ -443,19 +524,18 @@
     setVal('modalPenaltyRate', item.penalty_rate);
     setVal('modalMaintenanceProduct', item.maintenance_product);
     
+    if(item.contract_receipt_source) setVal('modalContractReceiptSource', item.contract_receipt_source);
+
     if (item.real_contractor_name) {
         const chk = document.getElementById('isDifferentContractor');
-        const form = document.getElementById('realContractorForm');
-        if(chk && !chk.checked) {
-            chk.click(); 
-        }
+        if(chk && !chk.checked) chk.click(); 
         setVal('realContractorName', item.real_contractor_name);
         setVal('realContractorPhone', item.real_contractor_phone);
     }
   }
 
   // ============================================================================
-  // [6] 이벤트 리스너 모음 (UI 관련)
+  // [6] 이벤트 리스너 모음
   // ============================================================================
   function setupGlobalEventListeners() {
     
@@ -467,8 +547,6 @@
     const searchContractBtn = document.getElementById('searchContractBtn');
     if(searchContractBtn) searchContractBtn.addEventListener('click', () => fetchGlobalContracts(true));
 
-    // [중요] 신규 계약 페이지 열기 (고객 상세 화면에서)
-    // 원래 ID인 openAddContractModalBtn을 유지하되, 기능만 모달->페이지 전환으로 변경
     const openBtnDetail = document.getElementById('openAddContractModalBtn');
     if(openBtnDetail) {
         openBtnDetail.addEventListener('click', () => {
@@ -476,7 +554,6 @@
         });
     }
 
-    // [중요] 신규 계약 페이지 열기 (계약 목록 화면에서)
     const openBtnList = document.getElementById('openAddContractPageFromListBtn');
     if(openBtnList) {
         openBtnList.addEventListener('click', () => {
@@ -484,7 +561,6 @@
         });
     }
 
-    // [중요] 취소 및 저장 버튼 (새 패널 ID 사용)
     document.getElementById('backFromAddContractBtn').addEventListener('click', (e) => {
         e.preventDefault();
         closeAddContractScreen();
@@ -498,12 +574,11 @@
         if(e.target.checked) form.classList.remove('hidden'); else form.classList.add('hidden');
     });
 
-    // 저장 버튼 ID 주의: saveNewContractPageBtn
     document.getElementById('saveNewContractPageBtn').addEventListener('click', async () => {
         saveNewContractLogic(); 
     });
 
-    // 1. 음성 분석 버튼
+    // 1. 음성 분석
     const btnAnalyze = document.getElementById('btnAnalyzeVoice');
     const fileInput = document.getElementById('voiceFileInput');
     if (btnAnalyze && fileInput) {
@@ -528,7 +603,7 @@
         });
     }
 
-    // 2. 계약서 분석 버튼
+    // 2. 계약서 분석
     const btnContract = document.getElementById('btnAnalyzeContract');
     const inputContract = document.getElementById('contractFileInput');
     if(btnContract && inputContract) {
@@ -536,7 +611,6 @@
             inputContract.value = '';
             inputContract.click();
         });
-        
         inputContract.addEventListener('change', async (e) => {
             const file = e.target.files[0];
             if(!file) return;
@@ -583,20 +657,24 @@
         const setVal = (id, v) => { const el = document.getElementById(id); if(el) el.value = v; };
         setVal('filterSearchTerm', '');
         setVal('filterDbType', '');
+        setVal('filterLeadSource', '');
         setVal('filterCustomerStatus', '');
         setVal('filterAssignmentDateFrom', ''); 
         setVal('filterAssignmentDateTo', '');
+        setVal('filterLastLogDateFrom', '');
+        setVal('filterLastLogDateTo', '');
         fetchCustomers(true);
     });
 
     document.getElementById('backToListBtn').addEventListener('click', (e) => {
       e.preventDefault();
       document.getElementById('customerDetailPanel').classList.add('hidden');
-      
       if (window.customerDetailSource === 'contractDetailPanel') {
           document.getElementById('contractDetailPanel').classList.remove('hidden');
       } else {
           document.getElementById('listPanel').classList.remove('hidden');
+          // [수정] 목록으로 돌아갈 때 데이터 갱신 (저장 내용 반영)
+          fetchCustomers(true);
       }
     });
 
@@ -621,8 +699,6 @@
         desired_contract_term: getVal('desiredContractTerm'),
         desired_initial_cost_type: getVal('desiredInitialCostType'),
         maintenance_service_level: getVal('maintenanceServiceLevel'),
-        is_repurchase: getVal('isRepurchase'),
-        payment_method: getVal('paymentMethod'),
         customer_status: getVal('customerStatus'),
         customer_memo: getVal('customerMemo'),
         quote_number: getVal('quoteNumber'),
@@ -690,6 +766,8 @@
       const name = document.getElementById('newCustomerName').value;
       let phone = document.getElementById('newCustomerPhoneNumber').value.replace(/\D/g, "");
       const dbType = document.getElementById('newDbType').value;
+      const leadSourceVal = document.getElementById('newLeadSource').value; 
+
       if(!name) return alert('이름 필수');
 
       showLoader();
@@ -701,6 +779,7 @@
         customer_name: name,
         customer_phone: formatPhoneNumber_Client(phone),
         db_type: dbType,
+        lead_source: leadSourceVal, 
         assigned_to: currentUserName,
         owner_email: currentUserEmail,
         assignment_date: nowISO,
@@ -774,12 +853,44 @@
             }
         });
     }
-    
-    // 초기 계약서 분석 리스너 호출 (공통)
+
+    const btnUpdateStatus = document.getElementById('btnUpdateContractStatus');
+    if(btnUpdateStatus) {
+        btnUpdateStatus.addEventListener('click', async () => {
+            if(!currentViewingContract || !currentViewingContract.contract_id) return;
+            
+            const newStatus = document.getElementById('detailContractStatus').value;
+            if(!newStatus) return alert("변경할 상태를 선택해주세요.");
+            
+            if(!confirm(`계약 상태를 '[${newStatus}]'로 변경하시겠습니까?`)) return;
+
+            showLoader();
+            try {
+                const { error } = await supabase
+                    .from('contracts')
+                    .update({ contract_status: newStatus })
+                    .eq('contract_id', currentViewingContract.contract_id);
+
+                if(error) throw error;
+
+                alert("✅ 상태가 변경되었습니다.");
+                currentViewingContract.contract_status = newStatus;
+                
+                if(currentContractSource === 'contract_list') fetchGlobalContracts(false);
+                else if(currentAssignmentId) selectCustomer(currentAssignmentId);
+
+            } catch(e) {
+                handleFailure(e);
+            } finally {
+                hideLoader();
+            }
+        });
+    }
+
     setupContractAnalysisListener();
   }
 
-  // DOMContentLoaded
+  // DOMContentLoaded & Init
   document.addEventListener('DOMContentLoaded', async () => {
     google.script.url.getLocation(async function(location) {
         const hash = location.hash; 
