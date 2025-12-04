@@ -280,13 +280,24 @@
       const cDate = formatDate(c.contract_date);
       const cModel = c.contract_car_model || '-';
       const cStatus = c.contract_status || '-';
-      // [수정] 계약 이력(미니 리스트)에도 색상 적용
       const statusClass = getStatusClass(cStatus);
       
+      // [추가] 표시할 데이터 변수 준비
+      // 명의자: 고객 정보가 있으면 이름 표시, 없으면 '미확인'
+      const custName = c.customers ? c.customers.customer_name : '(미확인)';
+      // 계약 기간: 숫자 뒤에 '개월' 붙임 (없으면 빈칸)
+      const cTerm = c.contract_term ? c.contract_term + '' : '';
+      // 계약 번호
+      const cNo = c.contract_number || '-';
+
+      // [수정] 리스트 아이템 레이아웃 (index.html 헤더와 flex 비율을 맞춰야 함)
       li.innerHTML = `
-        <span class="col-cont-date" style="flex:0 0 90px;">${cDate}</span>
-        <span class="col-cont-car" style="flex:1; padding-left:10px;" title="${escapeHtml(cModel)}">${escapeHtml(cModel)}</span>
-        <span class="col-cont-status" style="flex:0 0 80px;"><span class="status-badge ${statusClass}">${escapeHtml(cStatus)}</span></span>
+        <span class="col-cont-status" style="flex:0 0 70px; text-align:center;"><span class="status-badge ${statusClass}">${escapeHtml(cStatus)}</span></span>
+        <span class="col-cont-date" style="flex:0 0 85px; text-align:center;">${cDate}</span>
+        <span class="col-cont-term" style="flex:0 0 40px; text-align:center;">${cTerm}</span>
+        <span class="col-cont-cust" style="flex:0 0 100px; text-align:center; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${escapeHtml(custName)}">${escapeHtml(custName)}</span>
+        <span class="col-cont-car" style="flex:1; padding-left:5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${escapeHtml(cModel)}">${escapeHtml(cModel)}</span>
+        <span class="col-cont-no" style="flex:0 0 70px; text-align:center; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${escapeHtml(cNo)}">${escapeHtml(cNo)}</span>
       `;
       ul.appendChild(li);
     });
