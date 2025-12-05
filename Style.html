@@ -8,6 +8,11 @@
       margin: 0; padding: 10px; 
       overflow: hidden; color: #333;
     }
+    /* [Style.html] 스타일 추가 */
+    .col-manager { flex: 0 0 70px; text-align: center; color: #d63384; font-weight: bold; font-size: 0.8rem; }
+    /* 모바일에서는 공간 부족하면 숨기기 */
+    @media (max-width: 768px) { .col-manager { display: none; } }
+
     .container {
       width: 100%; height: calc(100vh - 20px);
       background: #fff; border-radius: 8px;
