@@ -58,6 +58,12 @@
           </div>
           <hr style="border:0; border-top:1px dashed #ddd; margin:15px 0;">
           <div class="filter-grid">
+            <div class="form-group admin-only hidden" style="background-color: #ffeef0; padding: 2px; border-radius: 4px;">
+              <label style="color: #d63384; font-weight:bold;">담당자 선택 (Admin):</label>
+              <select id="filterManager">
+                <option value="">전체 담당자 보기</option>
+              </select>
+            </div>
             <div class="form-group"><label>디비 유형:</label><select id="filterDbType"><option value="">전체</option></select></div>
             <div class="form-group"><label>유입경로:</label><select id="filterLeadSource"><option value="">전체</option></select></div>
             
@@ -88,6 +94,7 @@
           </div>
         </div>
         <div class="list-header-row">
+          <span class="col-manager hidden admin-only">담당자</span>
           <span class="col-status">진행 상태</span>
           <span class="col-db">DB유형</span>
           <span class="col-source">유입경로</span>
@@ -131,6 +138,7 @@
              <button id="openAddContractPageFromListBtn" disabled style="padding:6px 12px; font-size:0.8rem; background-color:#ccc; cursor:not-allowed;">+ 계약 추가 (점검중)</button>
          </div>
          <div class="list-header-row">
+          <span class="col-manager hidden admin-only">담당자</span>
            <span class="col-cont-status">상태</span>
            <span class="col-cont-date">계약일</span>
            <span class="col-cont-term">개월</span>
@@ -289,7 +297,13 @@
                     <div class="form-group"><label>필요시기:</label><select id="expectedContractTiming"><option value=""></option></select></div>
                     <div class="form-group"><label>계약기간:</label><select id="desiredContractTerm"><option value=""></option></select></div>
                     
-                    <div class="form-group"><label>초기비용:</label><select id="desiredInitialCostType"><option value=""></option></select></div>
+                    <div class="form-group span-2">
+                      <label>초기비용:</label>
+                      <div style="display:flex; gap:5px;">
+                          <select id="desiredInitialCostType" style="flex:1;"><option value=""></option></select>
+                          <input type="text" id="initialCostDetail" placeholder="상세 내용 (예: 보증 1000 / 선납 1000)" style="flex:2;">
+                      </div>
+                  </div>
                     <div class="form-group"><label>정비서비스:</label><select id="maintenanceServiceLevel"><option value=""></option></select></div>
                 </div>
             </div>
