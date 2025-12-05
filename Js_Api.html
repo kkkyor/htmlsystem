@@ -10,6 +10,7 @@
         currentOffset = 0;
         const getSafeVal = (id) => { const el = document.getElementById(id); return el ? el.value : ''; };
         currentFilters = {
+          manager: document.getElementById('filterManager') ? document.getElementById('filterManager').value : '',
           searchTerm: getSafeVal('filterSearchTerm'),
           dbType: getSafeVal('filterDbType'),
           leadSource: getSafeVal('filterLeadSource'),
@@ -30,6 +31,10 @@
           .range(currentOffset, currentOffset + PAGE_SIZE - 1)
           .order(currentSortColumn, { ascending: currentSortAscending, nullsFirst: nullsFirstOption });
 
+        // ▼▼▼ [핵심 수정] 관리자가 특정 담당자를 선택했다면 필터 적용 ▼▼▼
+        if (currentUserRole === 'admin' && currentFilters.manager) {
+            query = query.eq('assigned_to', currentFilters.manager);
+        }
         if (currentFilters.searchTerm) {
           const term = currentFilters.searchTerm;
           const cleanTerm = term.replace(/-/g, ''); 
@@ -85,11 +90,26 @@
 
       showLoader();
       try {
+
+        const managerVal = document.getElementById('filterManager') ? document.getElementById('filterManager').value : '';
+
         let query = supabase
           .from('contracts')
           .select('*, customers!inner(customer_name, customer_phone, assigned_to, db_type)')
           .eq('customers.assigned_to', currentUserName)
           .order('contract_date', { ascending: false });
+
+            // ▼▼▼ [핵심 수정] 필터링 로직 ▼▼▼
+        if (currentUserRole === 'admin') {
+            // 관리자인데 + 특정 담당자를 선택했다면? -> 그 사람 것만
+            if (managerVal) {
+                query = query.eq('customers.assigned_to', managerVal);
+            }
+            // 관리자인데 + 선택 안 했다면? -> 전체 보기 (아무 조건 안 검)
+        } else {
+            // 일반 유저라면 -> 무조건 내 것만
+            query = query.eq('customers.assigned_to', currentUserName);
+        }
 
         const statusEl = document.getElementById('filterContractStatus');
         const termEl = document.getElementById('contractSearchTerm');
@@ -461,7 +481,7 @@
               }
           }
 
-          const contractData = {
+            const contractData = {
               contract_id: "CN_" + Date.now(),
               assignment_id: targetAssignmentId, 
               actual_contractor_id: actualContractorId,
@@ -471,7 +491,7 @@
               contract_date: date,
               contract_car_model: car,
               
-              // [수정] 안전한 숫자 변환 적용
+              // 금액/기간 등은 이미 처리되어 있음
               contract_amount: safeNum(document.getElementById('modalContractAmount').value),
               contract_term: safeInt(document.getElementById('modalContractTerm').value),
               
@@ -481,14 +501,18 @@
               interior_color: document.getElementById('modalInteriorColor').value,
               
               car_price: safeNum(document.getElementById('modalCarPrice').value),
-              agreed_mileage: document.getElementById('modalAgreedMileage').value,
-              acquisition_price: safeNum(document.getElementById('modalAcquisitionPrice').value),
               
-              deposit_info: document.getElementById('modalDepositInfo').value,
-              penalty_rate: document.getElementById('modalPenaltyRate').value,
+              // ▼▼▼ [수정] 약정주행거리도 숫자로 변환 (콤마 제거 포함) ▼▼▼
+              agreed_mileage: safeNum(document.getElementById('modalAgreedMileage').value), 
+              
+              acquisition_price: safeNum(document.getElementById('modalAcquisitionPrice').value),
+              deposit_info: document.getElementById('modalDepositInfo').value, // 보증금 정보는 텍스트일 수 있음 (예: "30%")
+              
+              // ▼▼▼ [수정] 위약금율도 숫자로 변환 ▼▼▼
+              penalty_rate: safeNum(document.getElementById('modalPenaltyRate').value),
+              
               maintenance_product: document.getElementById('modalMaintenanceProduct').value,
               
-              // [수정] 안전한 숫자 변환 적용 (특히 수수료 부분)
               commission: safeNum(document.getElementById('modalCommission').value),
               
               input_date: document.getElementById('modalInputDate').value,
@@ -497,7 +521,7 @@
               
               contract_receipt_source: document.getElementById('modalContractReceiptSource').value,
               lead_source: document.getElementById('modalLeadSource').value
-          };
+            };
 
           const { error } = await supabase.from('contracts').insert([contractData]);
           if(error) throw error;
