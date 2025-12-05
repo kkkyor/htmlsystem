@@ -2,7 +2,10 @@
   // ============================================================================
   // [Js_Ui.html]
   // ============================================================================
-  
+  function enableAdminView() {
+    // .admin-only 클래스를 가진 요소들을 보여줌
+    document.querySelectorAll('.admin-only').forEach(el => el.classList.remove('hidden'));
+  }
   function toUiData(dbData) {
     if (!dbData) return null;
     return {
@@ -30,6 +33,7 @@
       expectedContractTiming: dbData.expected_contract_timing,
       desiredContractTerm: dbData.desired_contract_term,
       desiredInitialCostType: dbData.desired_initial_cost_type,
+      initialCostDetail: dbData.initial_cost_detail,
       maintenanceServiceLevel: dbData.maintenance_service_level,
       salesCondition: dbData.sales_condition,
       isRepurchase: dbData.is_repurchase,
@@ -155,8 +159,13 @@
         const dateStr = formatDate(c.assignmentDate);
         const lastLogStr = c.lastLogDate ? formatDate(c.lastLogDate) : '-';
 
+        // ▼▼▼ [수정 시작] 관리자일 때만 담당자 이름 표시 로직 추가 ▼▼▼
+        const managerHtml = (currentUserRole === 'admin') 
+            ? `<span class="col-manager admin-only" title="${escapeHtml(c.assignedTo)}">${escapeHtml(c.assignedTo)}</span>` 
+            : `<span class="col-manager hidden admin-only"></span>`; // 관리자가 아니면 숨김 처리
+
         li.innerHTML = `
-          <span class="col-status"><span class="status-badge ${statusClass}">${escapeHtml(c.customerStatus)}</span></span>
+          ${managerHtml} <span class="col-status"><span class="status-badge ${statusClass}">${escapeHtml(c.customerStatus)}</span></span>
           <span class="col-db">${escapeHtml(c.dbType)}</span>
           <span class="col-source" title="${escapeHtml(c.leadSource)}">${escapeHtml(c.leadSource)}</span>
           <span class="col-name" title="${escapeHtml(c.customerName)}">${escapeHtml(c.customerName)}</span>
@@ -165,6 +174,8 @@
           <span class="col-last">${lastLogStr}</span>
           <span class="col-date">${dateStr}</span>
         `;
+        // ▲▲▲ [수정 끝] ▲▲▲
+
         ul.appendChild(li);
       });
     }
@@ -213,6 +224,7 @@
     setVal('expectedContractTiming', data.expectedContractTiming);
     setVal('desiredContractTerm', data.desiredContractTerm);
     setVal('desiredInitialCostType', data.desiredInitialCostType);
+    setVal('initialCostDetail', data.initialCostDetail);
     setVal('maintenanceServiceLevel', data.maintenanceServiceLevel);
     setVal('customerStatus', data.customerStatus);
     setVal('customerMemo', data.customerMemo);
@@ -303,6 +315,7 @@
     });
   }
 
+  // [Js_Ui.html] renderGlobalContracts 함수 수정
   function renderGlobalContracts(contracts, isNew) {
     const div = document.getElementById('globalContractList');
     if (!div) return;
@@ -319,18 +332,25 @@
     contracts.forEach(c => {
         const custName = (c.customers && c.customers.customer_name) ? c.customers.customer_name : '(미확인)';
         const dbType = (c.customers && c.customers.db_type) ? c.customers.db_type : '-';
+        
+        // [중요] 계약 담당자 정보 가져오기 (DB 조인된 데이터)
+        const assignedTo = (c.customers && c.customers.assigned_to) ? c.customers.assigned_to : '-';
+        
         const cDate = formatDate(c.contract_date);
         const cStatus = c.contract_status || '-';
-        
-        // [수정] 계약 목록에도 색상 로직 적용 (누락되었던 부분)
         const statusClass = getStatusClass(cStatus);
 
         const row = document.createElement('div');
         row.className = 'contract-row';
         row.onclick = () => viewContractDetail(c, 'contract_list');
 
+        // ▼▼▼ [추가] 관리자일 때만 담당자 이름 표시 ▼▼▼
+        const managerHtml = (currentUserRole === 'admin') 
+            ? `<span class="col-manager admin-only">${escapeHtml(assignedTo)}</span>` 
+            : `<span class="col-manager hidden admin-only"></span>`;
+
         row.innerHTML = `
-          <span class="col-cont-status"><span class="status-badge ${statusClass}">${escapeHtml(cStatus)}</span></span>
+          ${managerHtml} <span class="col-cont-status"><span class="status-badge ${statusClass}">${escapeHtml(cStatus)}</span></span>
           <span class="col-cont-date">${cDate}</span>
           <span class="col-cont-term">${escapeHtml(c.contract_term)}</span>
           <span class="col-cont-cust">${escapeHtml(custName)}</span>
@@ -709,6 +729,7 @@
         expected_contract_timing: getVal('expectedContractTiming'),
         desired_contract_term: getVal('desiredContractTerm'),
         desired_initial_cost_type: getVal('desiredInitialCostType'),
+        initial_cost_detail: getVal('initialCostDetail'),
         maintenance_service_level: getVal('maintenanceServiceLevel'),
         customer_status: getVal('customerStatus'),
         customer_memo: getVal('customerMemo'),
@@ -943,11 +964,77 @@
     });
   }
 
+  // [Js_Ui.html] 맨 아래 onSessionValid 함수를 이걸로 덮어쓰세요.
   async function onSessionValid(sess) {
     session = sess;
     currentUserEmail = sess.user.email;
     document.getElementById('loginModal').classList.add('hidden');
-    const { data } = await supabase.from('profiles').select('korean_name').eq('email', currentUserEmail).maybeSingle();
-    currentUserName = data ? data.korean_name : currentUserEmail;
+
+    // [수정됨] profiles 테이블에서 이름뿐만 아니라 'role'도 같이 가져옴
+    const { data } = await supabase
+        .from('profiles')
+        .select('korean_name, role') 
+        .eq('email', currentUserEmail)
+        .maybeSingle();
+
+    if (data) {
+        currentUserName = data.korean_name || currentUserEmail;
+        currentUserRole = data.role || 'user'; // role 정보 저장 (없으면 'user')
+    } else {
+        currentUserName = currentUserEmail;
+        currentUserRole = 'user';
+    }
+
+    // 관리자라면 UI에 담당자 컬럼을 표시하는 함수 호출
+    // (enableAdminView 함수는 Js_Ui.html 어딘가에 추가해 두셔야 합니다)
+    if (currentUserRole === 'admin' && typeof enableAdminView === 'function') {
+        enableAdminView();
+    }
+
     fetchCustomers(true);
-  }
+}
+
+// [Js_Ui.html] 이 함수를 새로 추가하세요.
+async function populateManagerFilter() {
+    const el = document.getElementById('filterManager');
+    if (!el) return;
+
+    // 이미 목록이 차있으면 패스
+    if (el.options.length > 1) return;
+
+    // 1. 프로필 테이블에서 모든 사용자 이름 가져오기
+    // (만약 profiles 테이블이 없다면 customers 테이블에서 assigned_to를 중복제거해서 가져와야 함)
+    const { data, error } = await supabase
+        .from('profiles')
+        .select('korean_name')
+        .order('korean_name');
+
+    if (error) {
+        console.error("담당자 목록 로딩 실패:", error);
+        return;
+    }
+
+    // 2. 드롭박스에 옵션 추가
+    if (data) {
+        data.forEach(user => {
+            if (user.korean_name) {
+                const opt = document.createElement('option');
+                opt.value = user.korean_name;
+                opt.textContent = user.korean_name;
+                el.appendChild(opt);
+            }
+        });
+    }
+}
+
+// [Js_Ui.html] enableAdminView 함수를 찾아서 아래 내용을 추가/수정하세요.
+function enableAdminView() {
+    // 1. 관리자 전용 UI들 보이게 하기
+    document.querySelectorAll('.admin-only').forEach(el => el.classList.remove('hidden'));
+    
+    // 2. 담당자 필터 목록 채우기 실행
+    populateManagerFilter();
+}
+
+
+
