@@ -766,19 +766,84 @@
       
       showLoader();
       const nowISO = new Date().toISOString(); 
-      const newLog = {
-        log_id: 'LOG_' + Date.now(),
-        assignment_id: currentAssignmentId,
-        log_content: txt,
-        user_name: currentUserName,
-        log_timestamp: nowISO
+
+      // 1. [신규] 화면에 입력된 고객 상세 정보 싹 긁어오기
+      // (기존 saveCustomerDetailsBtn 로직과 동일)
+      const customerUpdates = {
+        customer_type: getVal('customerType'),
+        gender: getVal('gender'),
+        age_group: getVal('ageGroup'),
+        address_city: getVal('addressCity'),
+        income_type: getVal('incomeType'),
+        credit_info: getVal('creditInfo'),
+        interested_car_model: getVal('interestedCarModel'),
+        comparison_car_model: getVal('comparisonCarModel'),
+        owned_car_model: getVal('ownedCarModel'),
+        car_usage: getVal('carUsage'),
+        driver_scope: getVal('driverScope'),
+        driving_distance: getVal('drivingDistance'),
+        expected_contract_timing: getVal('expectedContractTiming'),
+        desired_contract_term: getVal('desiredContractTerm'),
+        desired_initial_cost_type: getVal('desiredInitialCostType'),
+        maintenance_service_level: getVal('maintenanceServiceLevel'),
+        customer_status: getVal('customerStatus'),
+        customer_memo: getVal('customerMemo'),
+        quote_number: getVal('quoteNumber'),
+        approval_number: getVal('approvalNumber'),
+        lead_source: getVal('leadSource'),
+        occupation: getVal('occupation'),
+        
+        // 여기에 상담일자 갱신 정보도 함께 포함
+        last_log_date: nowISO,
+        updated_at: nowISO
       };
-      const { error: logError } = await supabase.from('consultation_logs').insert([newLog]);
-      if(logError) { handleFailure(logError); return; } 
-      await supabase.from('customers').update({ last_log_date: nowISO, updated_at: nowISO }).eq('assignment_id', currentAssignmentId);
-      hideLoader();
-      document.getElementById('newLogContent').value = '';
-      selectCustomer(currentAssignmentId); 
+
+      try {
+          // 2. 상담 로그(Consultation Log) INSERT
+          const newLog = {
+            log_id: 'LOG_' + Date.now(),
+            assignment_id: currentAssignmentId,
+            log_content: txt,
+            user_name: currentUserName,
+            log_timestamp: nowISO
+          };
+          const { error: logError } = await supabase.from('consultation_logs').insert([newLog]);
+          if(logError) throw logError;
+
+          // 3. [핵심] 고객 정보(Customer Info) + 최근 상담일 한방에 UPDATE
+          const { error: custError } = await supabase
+              .from('customers')
+              .update(customerUpdates)
+              .eq('assignment_id', currentAssignmentId);
+              
+          if(custError) throw custError;
+
+          // 4. 마무리 UI 처리
+          hideLoader();
+          document.getElementById('newLogContent').value = '';
+          
+          // 피드백 메시지 (선택 사항)
+          // alert("상담 기록과 고객 정보가 모두 저장되었습니다.");
+
+          // 5. 로그 목록만 부분 새로고침 (입력 필드 유지)
+          const { data: logs, error: fetchError } = await supabase
+              .from('consultation_logs')
+              .select('*')
+              .eq('assignment_id', currentAssignmentId)
+              .order('log_timestamp', {ascending:false});
+              
+          if(!fetchError && logs) {
+              renderLogs(logs.map(l => ({ 
+                logId: l.log_id, 
+                logTimestamp: l.log_timestamp, 
+                logContent: l.log_content,
+                userName: l.user_name 
+            })));
+          }
+
+      } catch (err) {
+          handleFailure(err);
+      }
     });
 
     document.getElementById('savePhoneNumberBtn').addEventListener('click', async(e) => {
