@@ -10,6 +10,7 @@
   let session = null;
   let currentUserEmail = null;
   let currentUserName = "사용자";
+  let currentUserRole = 'user';
 
   let currentSortColumn = 'assignment_date'; // 기본 정렬 기준
   let currentSortAscending = false;          // 기본: 내림차순 (최신순)
@@ -27,7 +28,7 @@
   const CONFIG = {
     selectOptions: {
       // 1. [수정] DB 유형 (대분류)
-      dbTypes: ['롯데온라인', '노바딜', '오토미디어(자체)', '개별영업'],
+      dbTypes: ['롯데온라인','고객센터', '노바딜', '오토미디어(자체)', '개별영업'],
 
       // 2. [변경] 유입 경로는 Supabase 'db_types' 테이블에서 불러오므로 여기서 빈 배열 혹은 삭제
       // (코드상에서 DB 데이터로 덮어씌울 예정)
@@ -62,9 +63,9 @@
       drivingDistance: ['1만km', '1.5만km', '2만km', '2.5만km', '3만km', '3.5만km', '4만km', '4.5만km', '5만km', '5만km 이상', '미정'],
       expectedContractTiming: ['즉시(1개월 내)', '3개월 내', '6개월 내', '미정'],
       desiredContractTerm: ['12개월', '24개월', '36개월', '48개월', '60개월', '미정'],
-      desiredInitialCostType: ['무보증', '보증금', '선납금', '보증증권', '미정'],
+      desiredInitialCostType: ['무보증', '보증금', '선납금','보증금 + 선납금', '보증증권', '미정'],
       maintenanceServiceLevel: ['미포함(Self)', '포함(기본)', '포함(고급)', '미정'],
-      customerStatus: ['배정됨', '연락 시도 중', '상담 진행 중', '견적 발송', '추가 정보 요청', '가망 고객', '심사 진행중', '심사 완료', '계약 진행중', '계약 완료', '출고 완료', '기존 고객', '상담 보류', '상담 이탈'],
+      customerStatus: ['부재중', '상담 진행 중', '계약 진행중', '계약 완료', '상담 이탈'],
       addressCities: ['서울특별시', '부산광역시', '대구광역시', '인천광역시', '광주광역시', '대전광역시', '울산광역시', '세종특별자치시', '경기도', '강원특별자치도', '충청북도', '충청남도', '전북특별자치도', '전라남도', '경상북도', '경상남도', '제주특별자치도']
     }
   };
